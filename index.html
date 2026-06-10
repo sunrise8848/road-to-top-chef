@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f6f1">
+  <title>灶边 - 我的菜谱库</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航">
+      <a class="brand" href="#" data-nav="library" aria-label="灶边首页">
+        <span class="brand-mark">灶</span>
+        <span>
+          <strong>灶边</strong>
+          <small>我的厨房手记</small>
+        </span>
+      </a>
+
+      <nav class="nav-list">
+        <button class="nav-item active" data-nav="library">
+          <span class="nav-icon">⌂</span><span>菜谱库</span>
+        </button>
+        <button class="nav-item" data-nav="inbox">
+          <span class="nav-icon">↓</span><span>待整理</span>
+          <span class="badge" id="inboxCount">2</span>
+        </button>
+        <button class="nav-item" data-nav="favorites">
+          <span class="nav-icon">☆</span><span>常做菜</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-note">
+        <p>本周做饭</p>
+        <strong><span id="weekCount">3</span> 次</strong>
+        <div class="progress"><span style="width: 60%"></span></div>
+        <small>再做 2 次完成小目标</small>
+      </div>
+      <p class="storage-note">数据仅保存在此浏览器</p>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="打开菜单">☰</button>
+        <label class="search">
+          <span>⌕</span>
+          <input id="searchInput" type="search" placeholder="搜索菜名、食材或标签">
+          <kbd>Ctrl K</kbd>
+        </label>
+        <button class="avatar" aria-label="个人资料">L</button>
+      </header>
+
+      <section id="viewRoot" class="view"></section>
+    </main>
+  </div>
+
+  <dialog id="importDialog" class="modal">
+    <form method="dialog" id="importForm">
+      <div class="modal-head">
+        <div>
+          <span class="eyebrow">快速收录</span>
+          <h2>保存一个新教程</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-import aria-label="关闭">×</button>
+      </div>
+      <p class="modal-copy">粘贴小红书、抖音或其他平台的分享链接，先收进待整理箱，稍后再补全食材和步骤。</p>
+      <label class="field">
+        <span>教程链接</span>
+        <input name="url" type="url" placeholder="https://..." required>
+      </label>
+      <label class="field">
+        <span>菜名或备注</span>
+        <input name="title" type="text" placeholder="例如：看起来很下饭的鸡翅">
+      </label>
+      <div class="platform-row" aria-label="来源平台">
+        <label><input type="radio" name="platform" value="小红书" checked><span>小红书</span></label>
+        <label><input type="radio" name="platform" value="抖音"><span>抖音</span></label>
+        <label><input type="radio" name="platform" value="其他"><span>其他</span></label>
+      </div>
+      <div class="modal-actions">
+        <button class="button secondary" type="button" data-close-import>取消</button>
+        <button class="button primary" type="submit" value="default">收进待整理</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="recipeDialog" class="recipe-dialog">
+    <div id="recipeDetail"></div>
+  </dialog>
+
+  <dialog id="cookDialog" class="cook-dialog">
+    <div id="cookView"></div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>
