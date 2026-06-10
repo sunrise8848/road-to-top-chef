@@ -89,6 +89,62 @@
     <div id="recipeDetail"></div>
   </dialog>
 
+  <dialog id="organizeDialog" class="modal organize-modal">
+    <form id="organizeForm">
+      <div class="modal-head">
+        <div>
+          <span class="eyebrow">整理教程</span>
+          <h2>生成新的菜谱</h2>
+        </div>
+        <button class="icon-button" type="button" data-close-organize aria-label="关闭">×</button>
+      </div>
+      <p class="modal-copy">把视频里的关键内容记下来。食材和步骤每行填写一项，之后可以直接进入做菜模式。</p>
+      <input name="inboxId" type="hidden">
+      <div class="form-grid">
+        <label class="field field-wide">
+          <span>菜名</span>
+          <input name="title" type="text" required>
+        </label>
+        <label class="field">
+          <span>预计用时（分钟）</span>
+          <input name="time" type="number" min="1" value="30" required>
+        </label>
+        <label class="field">
+          <span>份量（人份）</span>
+          <input name="servings" type="number" min="1" value="2" required>
+        </label>
+        <label class="field">
+          <span>难度</span>
+          <select name="difficulty">
+            <option value="简单">简单</option>
+            <option value="中等">中等</option>
+            <option value="较难">较难</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>标签（用逗号分隔）</span>
+          <input name="tags" type="text" placeholder="例如：快手菜, 下饭">
+        </label>
+        <label class="field field-wide">
+          <span>食材（每行格式：食材 | 用量）</span>
+          <textarea name="ingredients" rows="5" placeholder="鸡蛋 | 3个&#10;番茄 | 2个" required></textarea>
+        </label>
+        <label class="field field-wide">
+          <span>制作步骤（每行一个步骤）</span>
+          <textarea name="steps" rows="6" placeholder="番茄切块，鸡蛋打散。&#10;热锅倒油，将鸡蛋炒至凝固。" required></textarea>
+        </label>
+        <label class="field field-wide">
+          <span>我的调整</span>
+          <textarea name="note" rows="3" placeholder="记录下次制作时要注意的地方"></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="button secondary" type="button" data-close-organize>取消</button>
+        <button class="button primary" type="submit">生成菜谱</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="cookDialog" class="cook-dialog">
     <div id="cookView"></div>
   </dialog>

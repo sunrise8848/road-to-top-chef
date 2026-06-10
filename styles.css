@@ -130,7 +130,11 @@ dialog::backdrop { background: rgba(16, 25, 20, .55); backdrop-filter: blur(3px)
 .icon-button { width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 50%; background: white; cursor: pointer; font-size: 22px; }
 .modal-copy { margin: 14px 0 22px; font-size: 13px; }
 .field { display: grid; gap: 7px; margin-bottom: 16px; color: #4d554f; font-size: 12px; font-weight: 700; }
-.field input, .field textarea { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #fbfbf8; }
+.field input, .field textarea, .field select { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #fbfbf8; }
+.field textarea { resize: vertical; line-height: 1.55; }
+.organize-modal { width: min(720px, calc(100vw - 28px)); max-height: calc(100vh - 28px); overflow: auto; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.field-wide { grid-column: 1 / -1; }
 .platform-row { display: flex; gap: 8px; }
 .platform-row label input { position: absolute; opacity: 0; }
 .platform-row span { display: block; padding: 9px 13px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px; }
@@ -184,6 +188,8 @@ dialog::backdrop { background: rgba(16, 25, 20, .55); backdrop-filter: blur(3px)
   .detail-columns { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .field-wide { grid-column: auto; }
   .app-shell { display: block; }
   .sidebar { transform: translateX(-100%); transition: transform .2s; box-shadow: var(--shadow); }
   .sidebar.open { transform: translateX(0); }

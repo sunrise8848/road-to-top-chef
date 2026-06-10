@@ -73,6 +73,8 @@ const state = {
 const viewRoot = document.querySelector("#viewRoot");
 const importDialog = document.querySelector("#importDialog");
 const recipeDialog = document.querySelector("#recipeDialog");
+const organizeDialog = document.querySelector("#organizeDialog");
+const organizeForm = document.querySelector("#organizeForm");
 const cookDialog = document.querySelector("#cookDialog");
 const searchInput = document.querySelector("#searchInput");
 
@@ -251,6 +253,34 @@ function finishCooking() {
   toast(`已记录：完成 ${state.activeRecipe.title}`);
 }
 
+function openOrganizer(id) {
+  const item = state.inbox.find(entry => entry.id === Number(id));
+  if (!item) return;
+
+  organizeForm.reset();
+  organizeForm.elements.inboxId.value = item.id;
+  organizeForm.elements.title.value = item.title;
+  organizeDialog.showModal();
+  organizeForm.elements.title.focus();
+}
+
+function parseIngredients(value) {
+  return value.split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const [name, ...amountParts] = line.split("|");
+      return [name.trim(), amountParts.join("|").trim() || "适量"];
+    });
+}
+
+function parseSteps(value) {
+  return value.split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(text => ({ text, items: "" }));
+}
+
 document.addEventListener("click", event => {
   const nav = event.target.closest("[data-nav]");
   if (nav) {
@@ -260,8 +290,12 @@ document.addEventListener("click", event => {
     document.querySelector(".sidebar").classList.remove("open");
     render();
   }
-  if (event.target.closest("[data-action='import']")) importDialog.showModal();
+  if (event.target.closest("[data-action='import']")) {
+    importDialog.querySelector("[name='url']").setAttribute("required", "");
+    importDialog.showModal();
+  }
   if (event.target.closest("[data-close-import]")) importDialog.close();
+  if (event.target.closest("[data-close-organize]")) organizeDialog.close();
   if (event.target.closest("[data-action='manual-add']")) {
     importDialog.showModal();
     importDialog.querySelector("[name='url']").removeAttribute("required");
@@ -285,12 +319,7 @@ document.addEventListener("click", event => {
   if (start) openCook(start.dataset.startCook);
   if (event.target.closest("[data-close-cook]")) { clearInterval(state.timerId); state.timerId = null; cookDialog.close(); }
   const organize = event.target.closest("[data-organize]");
-  if (organize) {
-    const item = state.inbox.find(entry => entry.id === Number(organize.dataset.organize));
-    state.inbox = state.inbox.filter(entry => entry.id !== item.id);
-    state.view = "library";
-    save(); render(); toast(`“${item.title}”已转为草稿菜谱`);
-  }
+  if (organize) openOrganizer(organize.dataset.organize);
   const del = event.target.closest("[data-delete-inbox]");
   if (del) { state.inbox = state.inbox.filter(entry => entry.id !== Number(del.dataset.deleteInbox)); render(); }
   if (event.target.closest("[data-cook-prev]") && state.cookStep > 0) { state.cookStep--; resetTimer(); renderCook(); }
@@ -352,6 +381,45 @@ document.querySelector("#importForm").addEventListener("submit", event => {
   toast("教程已收进待整理箱");
 });
 
+organizeForm.addEventListener("submit", event => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const inboxId = Number(form.get("inboxId"));
+  const item = state.inbox.find(entry => entry.id === inboxId);
+  if (!item) {
+    organizeDialog.close();
+    toast("这条待整理教程已不存在");
+    return;
+  }
+
+  const recipe = {
+    id: Date.now(),
+    title: form.get("title").trim(),
+    image: "assets/garlic-broccoli.png",
+    source: item.platform,
+    sourceUrl: item.url,
+    time: Number(form.get("time")),
+    difficulty: form.get("difficulty"),
+    servings: Number(form.get("servings")),
+    favorite: false,
+    cooked: 0,
+    tags: form.get("tags").split(/[,，]/).map(tag => tag.trim()).filter(Boolean),
+    ingredients: parseIngredients(form.get("ingredients")),
+    steps: parseSteps(form.get("steps")),
+    note: form.get("note").trim() || "暂无个人调整。"
+  };
+
+  state.recipes.unshift(recipe);
+  state.inbox = state.inbox.filter(entry => entry.id !== inboxId);
+  state.view = "library";
+  state.filter = "全部";
+  organizeDialog.close();
+  event.currentTarget.reset();
+  render();
+  toast(`“${recipe.title}”已生成菜谱`);
+  openRecipe(recipe.id);
+});
+
 searchInput.addEventListener("input", event => { state.query = event.target.value; if (state.view === "inbox") state.view = "library"; render(); });
 document.addEventListener("keydown", event => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); searchInput.focus(); }
@@ -360,5 +428,6 @@ document.addEventListener("keydown", event => {
 document.querySelector("#mobileMenu").addEventListener("click", () => document.querySelector(".sidebar").classList.toggle("open"));
 recipeDialog.addEventListener("click", event => { if (event.target === recipeDialog) recipeDialog.close(); });
 importDialog.addEventListener("click", event => { if (event.target === importDialog) importDialog.close(); });
+organizeDialog.addEventListener("click", event => { if (event.target === organizeDialog) organizeDialog.close(); });
 
 render();
