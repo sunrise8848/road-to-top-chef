@@ -191,7 +191,7 @@ function buildTogetherPrompt() {
 
 function normalizeTogetherPlan(value, recipes) {
   const recipeNames = new Set(recipes.map(recipe => recipe.title));
-  const prep = Array.isArray(value?.prep)
+  const modelPrep = Array.isArray(value?.prep)
     ? value.prep.slice(0, 100).map(item => ({
       name: String(item?.name || "").trim().slice(0, 100),
       totalAmount: String(item?.totalAmount || "按各菜用量").trim().slice(0, 160),
@@ -201,6 +201,7 @@ function normalizeTogetherPlan(value, recipes) {
       prep: String(item?.prep || "").trim().slice(0, 500)
     })).filter(item => item.name && item.prep)
     : [];
+  const prep = buildMergedPrep(recipes, modelPrep);
   const timeline = Array.isArray(value?.timeline)
     ? value.timeline.slice(0, 100).map(item => ({
       startMinute: clampInteger(item?.startMinute, 0, 1440, 0),
@@ -229,6 +230,57 @@ function normalizeTogetherPlan(value, recipes) {
       ? value.tips.map(tip => String(tip).trim()).filter(Boolean).slice(0, 12)
       : []
   };
+}
+
+function buildMergedPrep(recipes, modelPrep) {
+  const groups = new Map();
+  for (const recipe of recipes) {
+    for (const ingredient of recipe.ingredients) {
+      const key = ingredient.name.replace(/\s+/g, "").toLowerCase();
+      if (!groups.has(key)) {
+        groups.set(key, { name: ingredient.name, entries: [] });
+      }
+      groups.get(key).entries.push({
+        recipe: recipe.title,
+        amount: ingredient.amount
+      });
+    }
+  }
+
+  return [...groups.values()].map(group => {
+    const suggestion = modelPrep.find(item =>
+      item.name.replace(/\s+/g, "").toLowerCase() === group.name.replace(/\s+/g, "").toLowerCase()
+    );
+    const usedIn = [...new Set(group.entries.map(entry => entry.recipe))];
+    const mentionsUnrelatedRecipe = suggestion && recipes.some(recipe =>
+      !usedIn.includes(recipe.title) && suggestion.prep.includes(recipe.title)
+    );
+    return {
+      name: group.name,
+      totalAmount: mergeIngredientAmounts(group.entries),
+      usedIn,
+      prep: suggestion && !mentionsUnrelatedRecipe
+        ? suggestion.prep
+        : "按各菜需要统一清洗、切配并分装"
+    };
+  });
+}
+
+function mergeIngredientAmounts(entries) {
+  const parsed = entries.map(entry => {
+    const match = entry.amount.match(/^(\d+(?:\.\d+)?)\s*([^\d]+)$/);
+    return match ? { number: Number(match[1]), unit: match[2].trim() } : null;
+  });
+  if (
+    parsed.every(Boolean) &&
+    parsed.every(item => item.unit === parsed[0].unit) &&
+    !/适量|少许|按需/.test(parsed[0].unit)
+  ) {
+    const total = parsed.reduce((sum, item) => sum + item.number, 0);
+    return `${Number.isInteger(total) ? total : total.toFixed(1)}${parsed[0].unit}`;
+  }
+  if (entries.length === 1) return entries[0].amount;
+  return entries.map(entry => `${entry.recipe} ${entry.amount}`).join("；");
 }
 
 async function createRecipeDraft(sourceText, env, apiKey) {
