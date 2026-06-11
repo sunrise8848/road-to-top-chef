@@ -80,6 +80,7 @@ const searchInput = document.querySelector("#searchInput");
 const recipeApiUrl = window.RECIPE_API_URL?.trim() || "";
 let recognizeRequestId = 0;
 let pendingImages = [];
+let pendingImageTask = null;
 
 const IMAGE_DB_NAME = "zaobian-images";
 const IMAGE_STORE_NAME = "inbox-images";
@@ -485,8 +486,17 @@ function toggleTimer(defaultSeconds) {
 
 function resetPendingImages() {
   pendingImages = [];
+  pendingImageTask = null;
   document.querySelector("#recipeImages").value = "";
+  document.querySelector("#importSubmit").disabled = false;
+  setImportStatus("");
   renderImagePreview();
+}
+
+function setImportStatus(message, type = "") {
+  const status = document.querySelector("#importStatus");
+  status.textContent = message;
+  status.className = message ? `recognize-status show ${type}`.trim() : "recognize-status";
 }
 
 function renderImagePreview() {
@@ -507,17 +517,33 @@ function blobToDataUrl(blob) {
   });
 }
 
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`无法读取图片：${file.name}`));
+    };
+    image.src = url;
+  });
+}
+
 async function compressImage(file) {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const image = await loadImage(file);
+  const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
   const context = canvas.getContext("2d");
+  if (!context) throw new Error("当前浏览器无法处理图片");
   context.fillStyle = "#fff";
   context.fillRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
   const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.78));
   if (!blob) throw new Error("图片压缩失败");
   if (blob.size > 1.5 * 1024 * 1024) throw new Error("图片压缩后仍然过大，请选择尺寸较小的图片");
@@ -526,35 +552,66 @@ async function compressImage(file) {
 
 document.querySelector("#recipeImages").addEventListener("change", async event => {
   const files = [...event.target.files];
+  if (!files.length) {
+    resetPendingImages();
+    return;
+  }
   if (files.length > MAX_IMAGES) {
     toast(`一次最多上传 ${MAX_IMAGES} 张图片`);
     event.target.value = "";
     return;
   }
 
+  const submitButton = document.querySelector("#importSubmit");
+  submitButton.disabled = true;
+  setImportStatus(`正在处理 ${files.length} 张图片…`, "loading");
+  pendingImages = [];
+  renderImagePreview();
+
   try {
-    pendingImages = await Promise.all(files.map(compressImage));
+    pendingImageTask = Promise.all(files.map(compressImage));
+    pendingImages = await pendingImageTask;
     renderImagePreview();
+    setImportStatus(`已准备 ${pendingImages.length} 张图片，可以收进待整理。`);
   } catch (error) {
-    resetPendingImages();
-    toast(error.message);
+    pendingImages = [];
+    pendingImageTask = null;
+    event.target.value = "";
+    renderImagePreview();
+    setImportStatus(error.message, "error");
+  } finally {
+    submitButton.disabled = false;
   }
 });
 
 document.querySelector("#importForm").addEventListener("submit", async event => {
   event.preventDefault();
+  const submitButton = document.querySelector("#importSubmit");
+  submitButton.disabled = true;
+  if (pendingImageTask) {
+    setImportStatus("正在完成图片处理，请稍候…", "loading");
+    try {
+      await pendingImageTask;
+    } catch {
+      submitButton.disabled = false;
+      return;
+    }
+  }
   const form = new FormData(event.currentTarget);
   const shareText = form.get("shareText")?.trim() || "";
   if (!shareText && !pendingImages.length) {
-    toast("请至少填写教程文字或上传一张图片");
+    setImportStatus("请至少填写教程文字或上传一张图片。", "error");
+    submitButton.disabled = false;
     return;
   }
   const title = form.get("title")?.trim() || "未命名教程";
   const id = Date.now();
   try {
+    setImportStatus("正在保存到待整理箱…", "loading");
     if (pendingImages.length) await saveInboxImages(id, pendingImages);
-  } catch {
-    toast("图片保存失败，请检查浏览器存储空间");
+  } catch (error) {
+    setImportStatus(`图片保存失败：${error?.message || "请检查浏览器存储空间"}`, "error");
+    submitButton.disabled = false;
     return;
   }
   state.inbox.unshift({

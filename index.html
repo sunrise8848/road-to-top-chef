@@ -56,7 +56,7 @@
   </div>
 
   <dialog id="importDialog" class="modal">
-    <form method="dialog" id="importForm">
+    <form id="importForm">
       <div class="modal-head">
         <div>
           <span class="eyebrow">快速收录</span>
@@ -79,6 +79,7 @@
         <small class="field-help">支持 JPG、PNG、WebP，最多 6 张；图片仅用于识别并保存在当前浏览器。</small>
       </label>
       <div id="imagePreview" class="image-preview" aria-live="polite"></div>
+      <div id="importStatus" class="recognize-status" role="status"></div>
       <div class="platform-row" aria-label="来源平台">
         <label><input type="radio" name="platform" value="小红书" checked><span>小红书</span></label>
         <label><input type="radio" name="platform" value="抖音"><span>抖音</span></label>
@@ -86,7 +87,7 @@
       </div>
       <div class="modal-actions">
         <button class="button secondary" type="button" data-close-import>取消</button>
-        <button class="button primary" type="submit" value="default">收进待整理</button>
+        <button class="button primary" id="importSubmit" type="submit">收进待整理</button>
       </div>
     </form>
   </dialog>
