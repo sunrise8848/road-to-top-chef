@@ -86,6 +86,9 @@ let previewImageUrls = [];
 const IMAGE_DB_NAME = "zaobian-images";
 const IMAGE_STORE_NAME = "inbox-images";
 const MAX_IMAGES = 6;
+const MAX_IMAGE_EDGE = 1200;
+const IMAGE_QUALITY = 0.7;
+const MAX_IMAGE_BYTES = 800 * 1024;
 
 function save() {
   localStorage.setItem("zaobian-recipes", JSON.stringify(state.recipes));
@@ -336,23 +339,41 @@ async function recognizeRecipe(item, knownImages) {
   const recognizeButton = organizeDialog.querySelector("[data-recognize]");
   const requestId = ++recognizeRequestId;
   recognizeButton.disabled = true;
-  setRecognizeStatus("正在识别图片和文字并生成菜谱草稿…", "loading");
+  let elapsedSeconds = 0;
+  const statusTimer = setInterval(() => {
+    elapsedSeconds += 1;
+    if (requestId === recognizeRequestId && organizeDialog.open) {
+      setRecognizeStatus(
+        `AI 正在读取图片并生成菜谱，已等待 ${elapsedSeconds} 秒（通常需要 15–60 秒）…`,
+        "loading"
+      );
+    }
+  }, 1000);
+  setRecognizeStatus("AI 正在读取图片并生成菜谱（通常需要 15–60 秒）…", "loading");
 
   try {
     const storedImages = knownImages || await getInboxImages(item.id);
     const images = await Promise.all(storedImages.map(image =>
       typeof image === "string" ? image : blobToDataUrl(image)
     ));
-    const response = await fetch(recipeApiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: item.title,
-        platform: item.platform,
-        shareText: item.shareText || "",
-        images
-      })
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    let response;
+    try {
+      response = await fetch(recipeApiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          title: item.title,
+          platform: item.platform,
+          shareText: item.shareText || "",
+          images
+        })
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "识别服务暂时不可用");
     if (requestId !== recognizeRequestId || !organizeDialog.open) return;
@@ -365,8 +386,12 @@ async function recognizeRecipe(item, knownImages) {
     );
   } catch (error) {
     if (requestId !== recognizeRequestId || !organizeDialog.open) return;
-    setRecognizeStatus(`${error.message}。你仍然可以手动填写并生成菜谱。`, "error");
+    const message = error.name === "AbortError"
+      ? "识别超过 120 秒，已停止。请减少图片数量后重试"
+      : error.message;
+    setRecognizeStatus(`${message}。你仍然可以手动填写并生成菜谱。`, "error");
   } finally {
+    clearInterval(statusTimer);
     if (requestId === recognizeRequestId) recognizeButton.disabled = false;
   }
 }
@@ -553,7 +578,7 @@ function loadImage(file) {
 
 async function compressImage(file) {
   const image = await loadImage(file);
-  const scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
+  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
   canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -562,10 +587,20 @@ async function compressImage(file) {
   context.fillStyle = "#fff";
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.78));
+  let blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", IMAGE_QUALITY));
   if (!blob) throw new Error("图片压缩失败");
-  if (blob.size > 1.5 * 1024 * 1024) throw new Error("图片压缩后仍然过大，请选择尺寸较小的图片");
+  if (blob.size > MAX_IMAGE_BYTES) {
+    blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.55));
+  }
+  if (!blob || blob.size > MAX_IMAGE_BYTES) {
+    throw new Error("图片压缩后仍然过大，请选择尺寸较小的图片");
+  }
   return blob;
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 document.querySelector("#recipeImages").addEventListener("change", async event => {
@@ -590,7 +625,8 @@ document.querySelector("#recipeImages").addEventListener("change", async event =
     pendingImageTask = Promise.all(files.map(compressImage));
     pendingImages = await pendingImageTask;
     renderImagePreview();
-    setImportStatus(`已准备 ${pendingImages.length} 张图片，可以收进待整理。`);
+    const totalBytes = pendingImages.reduce((sum, image) => sum + image.size, 0);
+    setImportStatus(`已准备 ${pendingImages.length} 张图片，共 ${formatBytes(totalBytes)}，可以收进待整理。`);
   } catch (error) {
     pendingImages = [];
     pendingImageTask = null;

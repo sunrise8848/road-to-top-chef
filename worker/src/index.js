@@ -49,10 +49,9 @@ export default {
         return json({ error: "Worker 尚未配置 Cloudflare AI 图片识别绑定" }, 500, corsHeaders);
       }
 
-      const imageTexts = await recognizeImages(input.images, env);
-      const sourceText = buildSourceText(input, imageTexts);
-
-      const recipe = await createRecipeDraft(sourceText, env, apiKey);
+      const recipe = input.images.length
+        ? await createImageRecipeDraft(input, env)
+        : await createRecipeDraft(buildSourceText(input), env, apiKey);
       return json(
         {
           recipe,
@@ -124,18 +123,22 @@ function normalizeInput(payload) {
   };
 }
 
-async function recognizeImages(images, env) {
+async function createImageRecipeDraft(input, env) {
   const content = [
     {
       type: "text",
       text: [
-        `以下 ${images.length} 张图片按上传顺序组成同一份菜谱教程。`,
-        "请逐张识别所有可见的中文文字、食材、用量、火候、时间和制作步骤。",
-        "用“第1张”“第2张”等标题保留图片顺序；重复内容只需注明重复。",
-        "看不清的内容标记为[无法辨认]，不要凭空补充。只输出识别结果。"
-      ].join("\n")
+        `以下 ${input.images.length} 张图片按上传顺序组成同一份菜谱教程。`,
+        `平台：${input.platform}`,
+        `用户填写的标题：${input.title || "未填写"}`,
+        input.shareText ? `补充文字：${input.shareText}` : "",
+        "请直接识别全部图片并整理成一份可执行的中文菜谱。",
+        "结合所有图片去重并恢复食材和步骤顺序；看不清的内容不要凭空补充。",
+        "只输出 JSON，不要输出 Markdown 或解释。",
+        'JSON 格式：{"title":"菜名","time":30,"servings":2,"difficulty":"简单","tags":["标签"],"ingredients":[{"name":"食材","amount":"用量"}],"steps":[{"text":"步骤"}],"note":"注意事项","needsMoreText":false}'
+      ].filter(Boolean).join("\n")
     },
-    ...images.map(dataUrl => ({
+    ...input.images.map(dataUrl => ({
       type: "image_url",
       image_url: { url: dataUrl, detail: "high" }
     }))
@@ -144,21 +147,29 @@ async function recognizeImages(images, env) {
     env.VISION_MODEL || "@cf/moonshotai/kimi-k2.6",
     {
       messages: [{ role: "user", content }],
-      max_completion_tokens: 4000,
+      max_completion_tokens: 2500,
       temperature: 0.1
     }
   );
   const text = result?.choices?.[0]?.message?.content;
-  if (!text) throw createHttpError("视觉模型没有返回有效的图片识别结果", 502);
-  return [String(text).trim().slice(0, 24000)];
+  if (!text) throw createHttpError("视觉模型没有返回有效的菜谱草稿", 502);
+
+  try {
+    const jsonText = String(text).trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "");
+    return normalizeRecipeDraft(JSON.parse(jsonText));
+  } catch (error) {
+    if (error.status) throw error;
+    throw createHttpError("视觉模型返回的菜谱格式无效，请重试", 502);
+  }
 }
 
-function buildSourceText(input, imageTexts) {
+function buildSourceText(input) {
   return [
     `平台：${input.platform}`,
     `用户填写的标题：${input.title || "未填写"}`,
-    input.shareText ? `用户提供的教程文字或字幕：\n${input.shareText}` : "",
-    ...imageTexts.map(text => `多张图片识别结果：\n${text || "[未识别到有效内容]"}`)
+    input.shareText ? `用户提供的教程文字或字幕：\n${input.shareText}` : ""
   ].filter(Boolean).join("\n\n");
 }
 
