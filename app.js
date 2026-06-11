@@ -58,9 +58,18 @@ const seedInbox = [
   { id: 102, title: "先收着：一锅到底焖饭", shareText: "大米、腊肠和蔬菜放入电饭煲一起焖熟。", savedAt: "昨天 20:14" }
 ];
 
+function loadStoredList(key, fallback) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key));
+    return Array.isArray(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 const state = {
-  recipes: JSON.parse(localStorage.getItem("zaobian-recipes")) || seedRecipes,
-  inbox: JSON.parse(localStorage.getItem("zaobian-inbox")) || seedInbox,
+  recipes: loadStoredList("zaobian-recipes", seedRecipes),
+  inbox: loadStoredList("zaobian-inbox", seedInbox),
   view: "library",
   filter: "全部",
   query: "",
@@ -82,6 +91,8 @@ let recognizeRequestId = 0;
 const DEFAULT_COVER = "assets/garlic-broccoli.png";
 const MAX_COVER_EDGE = 1200;
 const MAX_COVER_BYTES = 450 * 1024;
+const BACKUP_VERSION = 1;
+const MAX_BACKUP_BYTES = 25 * 1024 * 1024;
 
 function save() {
   localStorage.setItem("zaobian-recipes", JSON.stringify(state.recipes));
@@ -273,6 +284,149 @@ async function openOrganizer(id) {
   await recognizeRecipe(item);
 }
 
+function createBackup() {
+  return {
+    app: "灶边",
+    version: BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    recipes: state.recipes,
+    inbox: state.inbox
+  };
+}
+
+function exportBackup() {
+  const content = JSON.stringify(createBackup(), null, 2);
+  const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const date = new Date().toISOString().slice(0, 10);
+  link.href = url;
+  link.download = `灶边备份-${date}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  toast(`已导出 ${state.recipes.length} 道菜谱`);
+}
+
+function validateBackup(value) {
+  if (!value || typeof value !== "object") throw new Error("备份文件内容无效");
+  if (value.app !== "灶边") throw new Error("这不是灶边生成的备份文件");
+  if (value.version !== BACKUP_VERSION) throw new Error("备份版本不受支持");
+  if (!Array.isArray(value.recipes) || !Array.isArray(value.inbox)) {
+    throw new Error("备份缺少菜谱或待整理数据");
+  }
+  if (value.recipes.length > 2000 || value.inbox.length > 2000) {
+    throw new Error("备份中的数据条目过多");
+  }
+
+  const assertPlainText = (text, label) => {
+    const value = String(text ?? "");
+    if (/[<>]/.test(value)) throw new Error(`${label}包含不安全的字符`);
+    return value;
+  };
+
+  const recipes = value.recipes.map((recipe, index) => {
+    if (!recipe || typeof recipe !== "object" || !String(recipe.title || "").trim()) {
+      throw new Error(`第 ${index + 1} 道菜谱缺少菜名`);
+    }
+    if (!Array.isArray(recipe.ingredients) || !Array.isArray(recipe.steps)) {
+      throw new Error(`“${recipe.title}”的食材或步骤格式无效`);
+    }
+    assertPlainText(recipe.title, `第 ${index + 1} 道菜谱`);
+    assertPlainText(recipe.note, `“${recipe.title}”的备注`);
+    const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
+    tags.forEach(tag => assertPlainText(tag, `“${recipe.title}”的标签`));
+    const ingredients = recipe.ingredients.map(item => {
+      if (!Array.isArray(item) || !String(item[0] || "").trim()) {
+        throw new Error(`“${recipe.title}”的食材格式无效`);
+      }
+      assertPlainText(item[0], `“${recipe.title}”的食材`);
+      assertPlainText(item[1], `“${recipe.title}”的用量`);
+      return [String(item[0]).trim(), String(item[1] || "适量").trim()];
+    });
+    const steps = recipe.steps.map(step => {
+      if (!step || typeof step !== "object" || !String(step.text || "").trim()) {
+        throw new Error(`“${recipe.title}”的步骤格式无效`);
+      }
+      assertPlainText(step.text, `“${recipe.title}”的步骤`);
+      return {
+        text: String(step.text).trim(),
+        items: assertPlainText(step.items, `“${recipe.title}”的步骤用料`),
+        ...(Number(step.timer) > 0 ? { timer: Number(step.timer) } : {})
+      };
+    });
+    const image = String(recipe.image || DEFAULT_COVER);
+    if (!/^(?:assets\/[\w.-]+|data:image\/(?:jpeg|png|webp);base64,)/i.test(image)) {
+      throw new Error(`“${recipe.title}”的封面格式无效`);
+    }
+    return {
+      id: Number(recipe.id) || Date.now() + index,
+      title: String(recipe.title).trim(),
+      image,
+      time: Math.max(1, Number(recipe.time) || 30),
+      difficulty: ["简单", "中等", "较难"].includes(recipe.difficulty) ? recipe.difficulty : "简单",
+      servings: Math.max(1, Number(recipe.servings) || 2),
+      favorite: Boolean(recipe.favorite),
+      cooked: Math.max(0, Number(recipe.cooked) || 0),
+      tags: tags.map(tag => String(tag).trim()).filter(Boolean),
+      ingredients,
+      steps,
+      note: String(recipe.note || "暂无个人调整。").trim()
+    };
+  });
+  const inbox = value.inbox.map((item, index) => {
+    if (!item || typeof item !== "object" || !String(item.shareText || "").trim()) {
+      throw new Error(`第 ${index + 1} 条待整理教程缺少文字内容`);
+    }
+    assertPlainText(item.title, `第 ${index + 1} 条待整理教程`);
+    assertPlainText(item.shareText, `第 ${index + 1} 条待整理教程`);
+    return {
+      id: Number(item.id) || Date.now() + recipes.length + index,
+      title: String(item.title || "未命名教程").trim(),
+      shareText: String(item.shareText).trim(),
+      savedAt: assertPlainText(item.savedAt, `第 ${index + 1} 条待整理教程的保存时间`) || "已导入"
+    };
+  });
+
+  return { recipes, inbox };
+}
+
+async function importBackup(file) {
+  if (!file) return;
+  if (file.size > MAX_BACKUP_BYTES) throw new Error("备份文件超过 25 MB，无法导入");
+
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch {
+    throw new Error("无法解析备份文件，请确认它是完整的 JSON 文件");
+  }
+  const backup = validateBackup(parsed);
+  const confirmed = window.confirm(
+    `导入后将替换当前的 ${state.recipes.length} 道菜谱和 ${state.inbox.length} 条待整理教程。\n\n确定继续吗？`
+  );
+  if (!confirmed) return;
+
+  const previousRecipes = state.recipes;
+  const previousInbox = state.inbox;
+  state.recipes = backup.recipes;
+  state.inbox = backup.inbox;
+  state.view = "library";
+  state.filter = "全部";
+  state.query = "";
+  searchInput.value = "";
+  try {
+    save();
+  } catch {
+    state.recipes = previousRecipes;
+    state.inbox = previousInbox;
+    throw new Error("浏览器存储空间不足，备份未导入");
+  }
+  render();
+  toast(`备份已恢复，共 ${state.recipes.length} 道菜谱`);
+}
+
 function prepareRecipeForm(mode, recipe) {
   organizeForm.reset();
   organizeForm.elements.inboxId.value = "";
@@ -417,6 +571,14 @@ function parseSteps(value) {
 }
 
 document.addEventListener("click", event => {
+  if (event.target.closest("[data-export-backup]")) {
+    exportBackup();
+    return;
+  }
+  if (event.target.closest("[data-import-backup]")) {
+    document.querySelector("#backupFile").click();
+    return;
+  }
   const nav = event.target.closest("[data-nav]");
   if (nav) {
     event.preventDefault();
@@ -590,6 +752,17 @@ document.querySelector("#resetCover").addEventListener("click", () => {
   document.querySelector("#coverImage").value = "";
   setCover(DEFAULT_COVER);
   setRecognizeStatus("已恢复默认封面。");
+});
+
+document.querySelector("#backupFile").addEventListener("change", async event => {
+  const [file] = event.target.files;
+  event.target.value = "";
+  if (!file) return;
+  try {
+    await importBackup(file);
+  } catch (error) {
+    toast(error.message || "备份导入失败");
+  }
 });
 
 document.querySelector("#importForm").addEventListener("submit", event => {

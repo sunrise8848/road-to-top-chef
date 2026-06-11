@@ -37,7 +37,12 @@
         <div class="progress"><span style="width: 60%"></span></div>
         <small>再做 2 次完成小目标</small>
       </div>
-      <p class="storage-note">数据仅保存在此浏览器</p>
+      <div class="backup-actions">
+        <button type="button" data-export-backup>导出备份</button>
+        <button type="button" data-import-backup>导入备份</button>
+        <input id="backupFile" type="file" accept="application/json,.json" hidden>
+      </div>
+      <p class="storage-note">数据保存在此浏览器，可通过备份迁移</p>
     </aside>
 
     <main class="main">
