@@ -38,6 +38,15 @@ export default {
 
     try {
       const payload = await request.json();
+      if (payload?.action === "plan_together") {
+        const recipes = normalizeTogetherRecipes(payload.recipes);
+        if (recipes.length < 2) {
+          return json({ error: "请至少选择两道菜" }, 400, corsHeaders);
+        }
+        const plan = await createTogetherPlan(recipes, env, apiKey);
+        return json({ plan }, 200, corsHeaders);
+      }
+
       const input = normalizeInput(payload);
       if (!input.shareText) {
         return json({ error: "请提供教程文字或字幕" }, 400, corsHeaders);
@@ -101,6 +110,125 @@ function buildSourceText(input) {
     `用户填写的标题：${input.title || "未填写"}`,
     input.shareText ? `用户提供的教程文字或字幕：\n${input.shareText}` : ""
   ].filter(Boolean).join("\n\n");
+}
+
+function normalizeTogetherRecipes(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 6).map(recipe => ({
+    title: String(recipe?.title || "").trim().slice(0, 100),
+    time: clampInteger(recipe?.time, 1, 1440, 30),
+    servings: clampInteger(recipe?.servings, 1, 50, 2),
+    ingredients: Array.isArray(recipe?.ingredients)
+      ? recipe.ingredients.slice(0, 50).map(item => ({
+        name: String(item?.name || "").trim().slice(0, 80),
+        amount: String(item?.amount || "适量").trim().slice(0, 80)
+      })).filter(item => item.name)
+      : [],
+    steps: Array.isArray(recipe?.steps)
+      ? recipe.steps.slice(0, 30).map(step => ({
+        text: String(step?.text || "").trim().slice(0, 500),
+        timer: clampInteger(step?.timer, 0, 86400, 0)
+      })).filter(step => step.text)
+      : [],
+    note: String(recipe?.note || "").trim().slice(0, 1000)
+  })).filter(recipe => recipe.title && recipe.ingredients.length && recipe.steps.length);
+}
+
+async function createTogetherPlan(recipes, env, apiKey) {
+  const response = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: env.DEEPSEEK_MODEL || "deepseek-v4-flash",
+      messages: [
+        { role: "system", content: buildTogetherPrompt() },
+        { role: "user", content: JSON.stringify({ recipes }) }
+      ],
+      thinking: { type: "disabled" },
+      response_format: { type: "json_object" },
+      max_tokens: 5000,
+      stream: false
+    })
+  });
+
+  const responseText = await response.text();
+  let result;
+  try {
+    result = JSON.parse(responseText);
+  } catch {
+    throw createHttpError(`DeepSeek API 返回了无法解析的响应（HTTP ${response.status}）`, 502);
+  }
+  if (!response.ok) {
+    throw createHttpError(result?.error?.message || "DeepSeek API 请求失败", response.status);
+  }
+
+  const outputText = result.choices?.[0]?.message?.content;
+  if (!outputText) throw createHttpError("DeepSeek 没有返回烹饪计划", 502);
+  try {
+    return normalizeTogetherPlan(JSON.parse(outputText), recipes);
+  } catch (error) {
+    if (error.status) throw error;
+    throw createHttpError("DeepSeek 返回的烹饪计划格式无效，请重试", 502);
+  }
+}
+
+function buildTogetherPrompt() {
+  return [
+    "你是擅长多道家常菜协同烹饪的厨房调度助手。只输出 JSON，不要输出 Markdown 或解释。",
+    "默认只有一个人操作，普通家庭厨房有两个灶眼；不要安排同一人在同一时间执行两项都需要持续翻炒、切配或看火的主动操作。",
+    "先统一备料：prep 必须覆盖每道菜的全部食材和调味料，不能省略盐、油、糖等常用配料。",
+    "相同食材必须合并成一项；能可靠相加相同单位时给出合计，单位不同或包含“适量”时在 totalAmount 中按菜名保留分项说明，不要强行换算。",
+    "再安排时间线：优先启动腌制、炖、蒸、焖、烤、烧水等耗时或等待步骤，在等待期间穿插其他菜的切配和快炒。",
+    "保证每道菜内部步骤顺序正确，并尽量让所有菜接近同时出锅；易凉或需要保持脆嫩的菜尽量靠后完成。",
+    "不要在同一个 active 项目中声称一个人同时焯水、切配或翻炒；等待可以与主动操作重叠，但主动操作应按真实先后拆开。",
+    "timeline 的 startMinute 和 duration 均为整数分钟；不足 1 分钟的操作按 1 分钟计。type 只能是 active 或 wait。",
+    'JSON 格式：{"recipeTitles":["菜1","菜2"],"totalTime":40,"prep":[{"name":"蒜","totalAmount":"6瓣","usedIn":["菜1","菜2"],"prep":"统一切末，分成两份"}],"timeline":[{"startMinute":0,"duration":5,"recipe":"通用备料","action":"清洗并切配全部蔬菜","type":"active","parallelNote":""},{"startMinute":5,"duration":20,"recipe":"菜1","action":"小火炖煮","type":"wait","parallelNote":"期间制作菜2"}],"tips":["快炒菜最后出锅"]}'
+  ].join("\n");
+}
+
+function normalizeTogetherPlan(value, recipes) {
+  const recipeNames = new Set(recipes.map(recipe => recipe.title));
+  const prep = Array.isArray(value?.prep)
+    ? value.prep.slice(0, 100).map(item => ({
+      name: String(item?.name || "").trim().slice(0, 100),
+      totalAmount: String(item?.totalAmount || "按各菜用量").trim().slice(0, 160),
+      usedIn: Array.isArray(item?.usedIn)
+        ? item.usedIn.map(name => String(name).trim()).filter(Boolean).slice(0, 6)
+        : [],
+      prep: String(item?.prep || "").trim().slice(0, 500)
+    })).filter(item => item.name && item.prep)
+    : [];
+  const timeline = Array.isArray(value?.timeline)
+    ? value.timeline.slice(0, 100).map(item => ({
+      startMinute: clampInteger(item?.startMinute, 0, 1440, 0),
+      duration: clampInteger(item?.duration, 1, 1440, 1),
+      recipe: String(item?.recipe || "通用").trim().slice(0, 100),
+      action: String(item?.action || "").trim().slice(0, 500),
+      type: item?.type === "wait" ? "wait" : "active",
+      parallelNote: String(item?.parallelNote || "").trim().slice(0, 300)
+    })).filter(item => item.action)
+      .sort((a, b) => a.startMinute - b.startMinute)
+    : [];
+
+  if (!prep.length || !timeline.length) {
+    throw createHttpError("生成的计划缺少备料清单或时间线", 502);
+  }
+  const calculatedEnd = Math.max(...timeline.map(item => item.startMinute + item.duration));
+  const returnedTitles = Array.isArray(value?.recipeTitles)
+    ? value.recipeTitles.map(name => String(name).trim()).filter(name => recipeNames.has(name))
+    : [];
+  return {
+    recipeTitles: returnedTitles.length ? returnedTitles : recipes.map(recipe => recipe.title),
+    totalTime: clampInteger(value?.totalTime, calculatedEnd, 1440, calculatedEnd),
+    prep,
+    timeline,
+    tips: Array.isArray(value?.tips)
+      ? value.tips.map(tip => String(tip).trim()).filter(Boolean).slice(0, 12)
+      : []
+  };
 }
 
 async function createRecipeDraft(sourceText, env, apiKey) {

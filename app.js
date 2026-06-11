@@ -67,9 +67,20 @@ function loadStoredList(key, fallback) {
   }
 }
 
+function loadStoredValue(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 const state = {
   recipes: loadStoredList("zaobian-recipes", seedRecipes),
   inbox: loadStoredList("zaobian-inbox", seedInbox),
+  togetherRecipeIds: loadStoredList("zaobian-together-recipes", []).map(Number).slice(0, 6),
+  togetherPlan: loadStoredValue("zaobian-together-plan", null),
+  togetherLoading: false,
   view: "library",
   filter: "全部",
   query: "",
@@ -97,6 +108,8 @@ const MAX_BACKUP_BYTES = 25 * 1024 * 1024;
 function save() {
   localStorage.setItem("zaobian-recipes", JSON.stringify(state.recipes));
   localStorage.setItem("zaobian-inbox", JSON.stringify(state.inbox));
+  localStorage.setItem("zaobian-together-recipes", JSON.stringify(state.togetherRecipeIds));
+  localStorage.setItem("zaobian-together-plan", JSON.stringify(state.togetherPlan));
   document.querySelector("#inboxCount").textContent = state.inbox.length;
 }
 
@@ -184,9 +197,105 @@ function renderInbox() {
   `;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderTogether() {
+  const selected = new Set(state.togetherRecipeIds.map(Number));
+  const plan = isTogetherPlan(state.togetherPlan) ? state.togetherPlan : null;
+  viewRoot.innerHTML = `
+    <div class="view-head">
+      <div>
+        <span class="eyebrow">多菜协同</span>
+        <h1>一起做，少忙一阵</h1>
+        <p>选择 2–6 道菜，AI 会合并备料，并利用等待时间穿插安排步骤。</p>
+      </div>
+      <button class="button primary" data-generate-together ${selected.size < 2 || state.togetherLoading ? "disabled" : ""}>
+        ${state.togetherLoading ? "正在规划…" : `生成烹饪计划（${selected.size}）`}
+      </button>
+    </div>
+    <div class="together-picker">
+      ${state.recipes.map(recipe => `
+        <button class="together-card ${selected.has(recipe.id) ? "selected" : ""}" data-toggle-together="${recipe.id}" type="button" aria-pressed="${selected.has(recipe.id)}">
+          <img src="${recipe.image}" alt="">
+          <span><strong>${escapeHtml(recipe.title)}</strong><small>${recipe.time} 分钟 · ${recipe.servings} 人份</small></span>
+          <b>${selected.has(recipe.id) ? "✓" : "＋"}</b>
+        </button>
+      `).join("")}
+    </div>
+    <div id="togetherStatus" class="recognize-status ${state.togetherLoading ? "show loading" : ""}" role="status">
+      ${state.togetherLoading ? "AI 正在合并备料并安排并行步骤，通常需要几秒钟…" : ""}
+    </div>
+    ${plan ? renderTogetherPlan(plan) : `
+      <div class="empty together-empty">
+        <strong>先选几道准备一起做的菜</strong>
+        <span>建议同时选择一道耗时较长的炖蒸菜和一两道快手菜。</span>
+      </div>
+    `}
+  `;
+}
+
+function isTogetherPlan(plan) {
+  return Boolean(
+    plan &&
+    Array.isArray(plan.recipeTitles) &&
+    Array.isArray(plan.prep) &&
+    Array.isArray(plan.timeline) &&
+    Array.isArray(plan.tips)
+  );
+}
+
+function renderTogetherPlan(plan) {
+  return `
+    <section class="together-plan">
+      <div class="plan-summary">
+        <div><span>计划菜品</span><strong>${plan.recipeTitles.map(escapeHtml).join("、")}</strong></div>
+        <div><span>预计总用时</span><strong>约 ${plan.totalTime} 分钟</strong></div>
+        <button class="button secondary small" data-generate-together>重新规划</button>
+      </div>
+      <div class="plan-columns">
+        <section class="plan-panel">
+          <span class="eyebrow">一次备好</span>
+          <h2>合并备料</h2>
+          <div class="prep-list">
+            ${plan.prep.map(item => `
+              <article>
+                <div><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.totalAmount)}</span></div>
+                <p>${escapeHtml(item.prep)}</p>
+                <small>用于：${item.usedIn.map(escapeHtml).join("、")}</small>
+              </article>
+            `).join("")}
+          </div>
+        </section>
+        <section class="plan-panel">
+          <span class="eyebrow">按这个顺序</span>
+          <h2>并行时间线</h2>
+          <ol class="plan-timeline">
+            ${plan.timeline.map(item => `
+              <li class="${item.type === "wait" ? "wait" : ""}">
+                <time>${item.startMinute}–${item.startMinute + item.duration} 分钟</time>
+                <div><strong>${escapeHtml(item.recipe)}</strong><p>${escapeHtml(item.action)}</p>${item.parallelNote ? `<small>${escapeHtml(item.parallelNote)}</small>` : ""}</div>
+              </li>
+            `).join("")}
+          </ol>
+        </section>
+      </div>
+      ${plan.tips.length ? `<div class="plan-tips"><strong>关键提醒</strong><ul>${plan.tips.map(tip => `<li>${escapeHtml(tip)}</li>`).join("")}</ul></div>` : ""}
+    </section>
+  `;
+}
+
 function render() {
   document.querySelectorAll("[data-nav]").forEach(el => el.classList.toggle("active", el.dataset.nav === state.view));
-  if (state.view === "inbox") renderInbox(); else renderLibrary();
+  if (state.view === "inbox") renderInbox();
+  else if (state.view === "together") renderTogether();
+  else renderLibrary();
   save();
 }
 
@@ -574,6 +683,61 @@ function parseSteps(value) {
     .map(text => ({ text, items: "" }));
 }
 
+async function generateTogetherPlan() {
+  const recipes = state.togetherRecipeIds
+    .map(id => state.recipes.find(recipe => recipe.id === Number(id)))
+    .filter(Boolean);
+  if (recipes.length < 2) {
+    toast("请至少选择两道菜");
+    return;
+  }
+  if (!recipeApiUrl) {
+    toast("尚未配置 AI 服务");
+    return;
+  }
+
+  state.togetherLoading = true;
+  render();
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    let response;
+    try {
+      response = await fetch(recipeApiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          action: "plan_together",
+          recipes: recipes.map(recipe => ({
+            title: recipe.title,
+            time: recipe.time,
+            servings: recipe.servings,
+            ingredients: recipe.ingredients.map(([name, amount]) => ({ name, amount })),
+            steps: recipe.steps.map(step => ({
+              text: step.text,
+              timer: Number(step.timer) || 0
+            })),
+            note: recipe.note
+          }))
+        })
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "AI 暂时无法生成计划");
+    state.togetherPlan = result.plan;
+    save();
+  } catch (error) {
+    const message = error.name === "AbortError" ? "规划超过 120 秒，请稍后重试" : error.message;
+    toast(message);
+  } finally {
+    state.togetherLoading = false;
+    render();
+  }
+}
+
 document.addEventListener("click", event => {
   if (event.target.closest("[data-export-backup]")) {
     exportBackup();
@@ -581,6 +745,25 @@ document.addEventListener("click", event => {
   }
   if (event.target.closest("[data-import-backup]")) {
     document.querySelector("#backupFile").click();
+    return;
+  }
+  const togetherToggle = event.target.closest("[data-toggle-together]");
+  if (togetherToggle) {
+    const id = Number(togetherToggle.dataset.toggleTogether);
+    if (state.togetherRecipeIds.includes(id)) {
+      state.togetherRecipeIds = state.togetherRecipeIds.filter(recipeId => recipeId !== id);
+    } else if (state.togetherRecipeIds.length < 6) {
+      state.togetherRecipeIds.push(id);
+    } else {
+      toast("一次最多选择 6 道菜");
+      return;
+    }
+    state.togetherPlan = null;
+    render();
+    return;
+  }
+  if (event.target.closest("[data-generate-together]")) {
+    generateTogetherPlan();
     return;
   }
   const nav = event.target.closest("[data-nav]");
