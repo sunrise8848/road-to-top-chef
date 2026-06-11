@@ -1,0 +1,9 @@
+name = "road-to-top-chef-api"
+main = "src/index.js"
+compatibility_date = "2026-06-10"
+workers_dev = true
+preview_urls = false
+
+[vars]
+ALLOWED_ORIGIN = "https://sunrise8848.github.io"
+DEEPSEEK_MODEL = "deepseek-v4-flash"

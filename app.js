@@ -77,6 +77,8 @@ const organizeDialog = document.querySelector("#organizeDialog");
 const organizeForm = document.querySelector("#organizeForm");
 const cookDialog = document.querySelector("#cookDialog");
 const searchInput = document.querySelector("#searchInput");
+const recipeApiUrl = window.RECIPE_API_URL?.trim() || "";
+let recognizeRequestId = 0;
 
 function save() {
   localStorage.setItem("zaobian-recipes", JSON.stringify(state.recipes));
@@ -253,7 +255,7 @@ function finishCooking() {
   toast(`已记录：完成 ${state.activeRecipe.title}`);
 }
 
-function openOrganizer(id) {
+async function openOrganizer(id) {
   const item = state.inbox.find(entry => entry.id === Number(id));
   if (!item) return;
 
@@ -262,6 +264,68 @@ function openOrganizer(id) {
   organizeForm.elements.title.value = item.title;
   organizeDialog.showModal();
   organizeForm.elements.title.focus();
+  await recognizeRecipe(item);
+}
+
+function setRecognizeStatus(message, type = "") {
+  const status = document.querySelector("#organizeStatus");
+  status.textContent = message;
+  status.className = `recognize-status show ${type}`.trim();
+}
+
+function fillRecipeDraft(draft) {
+  if (draft.title) organizeForm.elements.title.value = draft.title;
+  if (draft.time) organizeForm.elements.time.value = draft.time;
+  if (draft.servings) organizeForm.elements.servings.value = draft.servings;
+  if (draft.difficulty) organizeForm.elements.difficulty.value = draft.difficulty;
+  organizeForm.elements.tags.value = (draft.tags || []).join(", ");
+  organizeForm.elements.ingredients.value = (draft.ingredients || [])
+    .map(item => `${item.name} | ${item.amount || "适量"}`)
+    .join("\n");
+  organizeForm.elements.steps.value = (draft.steps || [])
+    .map(step => step.text)
+    .join("\n");
+  organizeForm.elements.note.value = draft.note || "";
+}
+
+async function recognizeRecipe(item) {
+  if (!recipeApiUrl) {
+    setRecognizeStatus("尚未配置识别服务。可以先手动整理，部署 Worker 后在 config.js 中填写接口地址。", "error");
+    return;
+  }
+
+  const recognizeButton = organizeDialog.querySelector("[data-recognize]");
+  const requestId = ++recognizeRequestId;
+  recognizeButton.disabled = true;
+  setRecognizeStatus("正在读取教程并生成菜谱草稿…", "loading");
+
+  try {
+    const response = await fetch(recipeApiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: item.url,
+        title: item.title,
+        platform: item.platform,
+        shareText: item.shareText || ""
+      })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "识别服务暂时不可用");
+    if (requestId !== recognizeRequestId || !organizeDialog.open) return;
+
+    fillRecipeDraft(result.recipe);
+    setRecognizeStatus(
+      result.needsMoreText
+        ? "已根据现有内容生成草稿，但链接提供的信息较少。建议补充分享文案或字幕后重新识别。"
+        : "草稿已自动生成，请检查食材用量和步骤后保存。"
+    );
+  } catch (error) {
+    if (requestId !== recognizeRequestId || !organizeDialog.open) return;
+    setRecognizeStatus(`${error.message}。你仍然可以手动填写并生成菜谱。`, "error");
+  } finally {
+    if (requestId === recognizeRequestId) recognizeButton.disabled = false;
+  }
 }
 
 function parseIngredients(value) {
@@ -295,7 +359,14 @@ document.addEventListener("click", event => {
     importDialog.showModal();
   }
   if (event.target.closest("[data-close-import]")) importDialog.close();
-  if (event.target.closest("[data-close-organize]")) organizeDialog.close();
+  if (event.target.closest("[data-close-organize]")) {
+    recognizeRequestId++;
+    organizeDialog.close();
+  }
+  if (event.target.closest("[data-recognize]")) {
+    const item = state.inbox.find(entry => entry.id === Number(organizeForm.elements.inboxId.value));
+    if (item) recognizeRecipe(item);
+  }
   if (event.target.closest("[data-action='manual-add']")) {
     importDialog.showModal();
     importDialog.querySelector("[name='url']").removeAttribute("required");
@@ -373,7 +444,14 @@ document.querySelector("#importForm").addEventListener("submit", event => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const title = form.get("title")?.trim() || "未命名教程";
-  state.inbox.unshift({ id: Date.now(), title, platform: form.get("platform"), url: form.get("url"), savedAt: "刚刚" });
+  state.inbox.unshift({
+    id: Date.now(),
+    title,
+    platform: form.get("platform"),
+    url: form.get("url"),
+    shareText: form.get("shareText")?.trim() || "",
+    savedAt: "刚刚"
+  });
   event.currentTarget.reset();
   importDialog.close();
   state.view = "inbox";
@@ -428,6 +506,11 @@ document.addEventListener("keydown", event => {
 document.querySelector("#mobileMenu").addEventListener("click", () => document.querySelector(".sidebar").classList.toggle("open"));
 recipeDialog.addEventListener("click", event => { if (event.target === recipeDialog) recipeDialog.close(); });
 importDialog.addEventListener("click", event => { if (event.target === importDialog) importDialog.close(); });
-organizeDialog.addEventListener("click", event => { if (event.target === organizeDialog) organizeDialog.close(); });
+organizeDialog.addEventListener("click", event => {
+  if (event.target === organizeDialog) {
+    recognizeRequestId++;
+    organizeDialog.close();
+  }
+});
 
 render();

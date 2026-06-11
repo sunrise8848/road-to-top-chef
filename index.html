@@ -73,6 +73,10 @@
         <span>菜名或备注</span>
         <input name="title" type="text" placeholder="例如：看起来很下饭的鸡翅">
       </label>
+      <label class="field">
+        <span>分享文案或字幕（推荐）</span>
+        <textarea name="shareText" rows="5" placeholder="粘贴平台分享文案、视频字幕或作者写的食材步骤。链接无法直接读取时，会优先根据这里的内容生成草稿。"></textarea>
+      </label>
       <div class="platform-row" aria-label="来源平台">
         <label><input type="radio" name="platform" value="小红书" checked><span>小红书</span></label>
         <label><input type="radio" name="platform" value="抖音"><span>抖音</span></label>
@@ -99,6 +103,7 @@
         <button class="icon-button" type="button" data-close-organize aria-label="关闭">×</button>
       </div>
       <p class="modal-copy">把视频里的关键内容记下来。食材和步骤每行填写一项，之后可以直接进入做菜模式。</p>
+      <div id="organizeStatus" class="recognize-status" role="status"></div>
       <input name="inboxId" type="hidden">
       <div class="form-grid">
         <label class="field field-wide">
@@ -139,6 +144,7 @@
         </label>
       </div>
       <div class="modal-actions">
+        <button class="button secondary" type="button" data-recognize>重新识别</button>
         <button class="button secondary" type="button" data-close-organize>取消</button>
         <button class="button primary" type="submit">生成菜谱</button>
       </div>
@@ -150,6 +156,7 @@
   </dialog>
 
   <div class="toast" id="toast" role="status"></div>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

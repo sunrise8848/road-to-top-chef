@@ -135,6 +135,11 @@ dialog::backdrop { background: rgba(16, 25, 20, .55); backdrop-filter: blur(3px)
 .organize-modal { width: min(720px, calc(100vw - 28px)); max-height: calc(100vh - 28px); overflow: auto; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
 .field-wide { grid-column: 1 / -1; }
+.recognize-status { display: none; margin: -8px 0 18px; padding: 11px 13px; border-radius: 6px; color: #526057; background: var(--green-soft); font-size: 12px; line-height: 1.55; }
+.recognize-status.show { display: block; }
+.recognize-status.error { color: #8a3c31; background: #fff0ec; }
+.recognize-status.loading::before { content: ""; width: 12px; height: 12px; margin-right: 8px; display: inline-block; vertical-align: -2px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .platform-row { display: flex; gap: 8px; }
 .platform-row label input { position: absolute; opacity: 0; }
 .platform-row span { display: block; padding: 9px 13px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px; }
