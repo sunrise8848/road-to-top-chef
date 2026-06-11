@@ -54,8 +54,8 @@ const seedRecipes = [
 ];
 
 const seedInbox = [
-  { id: 101, title: "空气炸锅蜜汁鸡翅", platform: "小红书", url: "#", savedAt: "今天 11:28" },
-  { id: 102, title: "先收着：一锅到底焖饭", platform: "抖音", url: "#", savedAt: "昨天 20:14" }
+  { id: 101, title: "空气炸锅蜜汁鸡翅", platform: "小红书", shareText: "鸡翅腌制后放入空气炸锅，刷蜜汁烤至上色。", imageCount: 0, savedAt: "今天 11:28" },
+  { id: 102, title: "先收着：一锅到底焖饭", platform: "抖音", shareText: "大米、腊肠和蔬菜放入电饭煲一起焖熟。", imageCount: 0, savedAt: "昨天 20:14" }
 ];
 
 const state = {
@@ -79,6 +79,11 @@ const cookDialog = document.querySelector("#cookDialog");
 const searchInput = document.querySelector("#searchInput");
 const recipeApiUrl = window.RECIPE_API_URL?.trim() || "";
 let recognizeRequestId = 0;
+let pendingImages = [];
+
+const IMAGE_DB_NAME = "zaobian-images";
+const IMAGE_STORE_NAME = "inbox-images";
+const MAX_IMAGES = 6;
 
 function save() {
   localStorage.setItem("zaobian-recipes", JSON.stringify(state.recipes));
@@ -158,13 +163,13 @@ function renderInbox() {
     ${state.inbox.length ? `<div class="inbox-list">${state.inbox.map(item => `
       <article class="inbox-item">
         <div class="platform-mark ${item.platform === "抖音" ? "douyin" : ""}">${item.platform.slice(0,1)}</div>
-        <div><h3>${item.title}</h3><p>${item.platform} · 收录于 ${item.savedAt}</p></div>
+        <div><h3>${item.title}</h3><p>${item.platform} · ${item.imageCount || 0} 张图片 · 收录于 ${item.savedAt}</p></div>
         <div class="inbox-actions">
           <button class="button secondary small" data-delete-inbox="${item.id}">删除</button>
           <button class="button primary small" data-organize="${item.id}">开始整理</button>
         </div>
       </article>`).join("")}</div>` :
-      `<div class="empty"><strong>待整理箱已经清空</strong><span>下次看到喜欢的教程，粘贴链接就能先收进来。</span></div>`}
+      `<div class="empty"><strong>待整理箱已经清空</strong><span>下次看到喜欢的教程，上传截图或粘贴文字就能先收进来。</span></div>`}
   `;
 }
 
@@ -255,6 +260,37 @@ function finishCooking() {
   toast(`已记录：完成 ${state.activeRecipe.title}`);
 }
 
+function openImageDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IMAGE_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(IMAGE_STORE_NAME)) {
+        request.result.createObjectStore(IMAGE_STORE_NAME);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function imageStoreAction(mode, id, value) {
+  const db = await openImageDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(IMAGE_STORE_NAME, mode === "get" ? "readonly" : "readwrite");
+    const store = transaction.objectStore(IMAGE_STORE_NAME);
+    const request = mode === "put" ? store.put(value, id) :
+      mode === "delete" ? store.delete(id) :
+      store.get(id);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => db.close();
+  });
+}
+
+const getInboxImages = id => imageStoreAction("get", id).then(images => images || []);
+const saveInboxImages = (id, images) => imageStoreAction("put", id, images);
+const deleteInboxImages = id => imageStoreAction("delete", id);
+
 async function openOrganizer(id) {
   const item = state.inbox.find(entry => entry.id === Number(id));
   if (!item) return;
@@ -264,7 +300,8 @@ async function openOrganizer(id) {
   organizeForm.elements.title.value = item.title;
   organizeDialog.showModal();
   organizeForm.elements.title.focus();
-  await recognizeRecipe(item);
+  const images = await getInboxImages(item.id).catch(() => []);
+  await recognizeRecipe(item, images);
 }
 
 function setRecognizeStatus(message, type = "") {
@@ -288,7 +325,7 @@ function fillRecipeDraft(draft) {
   organizeForm.elements.note.value = draft.note || "";
 }
 
-async function recognizeRecipe(item) {
+async function recognizeRecipe(item, knownImages) {
   if (!recipeApiUrl) {
     setRecognizeStatus("尚未配置识别服务。可以先手动整理，部署 Worker 后在 config.js 中填写接口地址。", "error");
     return;
@@ -297,17 +334,18 @@ async function recognizeRecipe(item) {
   const recognizeButton = organizeDialog.querySelector("[data-recognize]");
   const requestId = ++recognizeRequestId;
   recognizeButton.disabled = true;
-  setRecognizeStatus("正在读取教程并生成菜谱草稿…", "loading");
+  setRecognizeStatus("正在识别图片和文字并生成菜谱草稿…", "loading");
 
   try {
+    const images = knownImages || await getInboxImages(item.id);
     const response = await fetch(recipeApiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        url: item.url,
         title: item.title,
         platform: item.platform,
-        shareText: item.shareText || ""
+        shareText: item.shareText || "",
+        images
       })
     });
     const result = await response.json();
@@ -317,8 +355,8 @@ async function recognizeRecipe(item) {
     fillRecipeDraft(result.recipe);
     setRecognizeStatus(
       result.needsMoreText
-        ? "已根据现有内容生成草稿，但链接提供的信息较少。建议补充分享文案或字幕后重新识别。"
-        : "草稿已自动生成，请检查食材用量和步骤后保存。"
+        ? "已根据图片和文字生成草稿，但信息可能不完整，请重点检查食材用量和步骤。"
+        : `已识别 ${result.imageCount || 0} 张图片并生成草稿，请检查后保存。`
     );
   } catch (error) {
     if (requestId !== recognizeRequestId || !organizeDialog.open) return;
@@ -355,7 +393,7 @@ document.addEventListener("click", event => {
     render();
   }
   if (event.target.closest("[data-action='import']")) {
-    importDialog.querySelector("[name='url']").setAttribute("required", "");
+    resetPendingImages();
     importDialog.showModal();
   }
   if (event.target.closest("[data-close-import]")) importDialog.close();
@@ -368,8 +406,8 @@ document.addEventListener("click", event => {
     if (item) recognizeRecipe(item);
   }
   if (event.target.closest("[data-action='manual-add']")) {
+    resetPendingImages();
     importDialog.showModal();
-    importDialog.querySelector("[name='url']").removeAttribute("required");
     importDialog.querySelector("[name='title']").focus();
   }
   const filter = event.target.closest("[data-filter]");
@@ -392,7 +430,12 @@ document.addEventListener("click", event => {
   const organize = event.target.closest("[data-organize]");
   if (organize) openOrganizer(organize.dataset.organize);
   const del = event.target.closest("[data-delete-inbox]");
-  if (del) { state.inbox = state.inbox.filter(entry => entry.id !== Number(del.dataset.deleteInbox)); render(); }
+  if (del) {
+    const id = Number(del.dataset.deleteInbox);
+    state.inbox = state.inbox.filter(entry => entry.id !== id);
+    deleteInboxImages(id).catch(() => {});
+    render();
+  }
   if (event.target.closest("[data-cook-prev]") && state.cookStep > 0) { state.cookStep--; resetTimer(); renderCook(); }
   if (event.target.closest("[data-cook-next]")) {
     if (state.cookStep < state.activeRecipe.steps.length - 1) { state.cookStep++; resetTimer(); renderCook(); }
@@ -440,19 +483,90 @@ function toggleTimer(defaultSeconds) {
   renderCook();
 }
 
-document.querySelector("#importForm").addEventListener("submit", event => {
+function resetPendingImages() {
+  pendingImages = [];
+  document.querySelector("#recipeImages").value = "";
+  renderImagePreview();
+}
+
+function renderImagePreview() {
+  document.querySelector("#imagePreview").innerHTML = pendingImages.map((image, index) => `
+    <figure>
+      <img src="${image}" alt="待识别图片 ${index + 1}">
+      <figcaption>${index + 1}</figcaption>
+    </figure>
+  `).join("");
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function compressImage(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.78));
+  if (!blob) throw new Error("图片压缩失败");
+  if (blob.size > 1.5 * 1024 * 1024) throw new Error("图片压缩后仍然过大，请选择尺寸较小的图片");
+  return blobToDataUrl(blob);
+}
+
+document.querySelector("#recipeImages").addEventListener("change", async event => {
+  const files = [...event.target.files];
+  if (files.length > MAX_IMAGES) {
+    toast(`一次最多上传 ${MAX_IMAGES} 张图片`);
+    event.target.value = "";
+    return;
+  }
+
+  try {
+    pendingImages = await Promise.all(files.map(compressImage));
+    renderImagePreview();
+  } catch (error) {
+    resetPendingImages();
+    toast(error.message);
+  }
+});
+
+document.querySelector("#importForm").addEventListener("submit", async event => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const shareText = form.get("shareText")?.trim() || "";
+  if (!shareText && !pendingImages.length) {
+    toast("请至少填写教程文字或上传一张图片");
+    return;
+  }
   const title = form.get("title")?.trim() || "未命名教程";
+  const id = Date.now();
+  try {
+    if (pendingImages.length) await saveInboxImages(id, pendingImages);
+  } catch {
+    toast("图片保存失败，请检查浏览器存储空间");
+    return;
+  }
   state.inbox.unshift({
-    id: Date.now(),
+    id,
     title,
     platform: form.get("platform"),
-    url: form.get("url"),
-    shareText: form.get("shareText")?.trim() || "",
+    shareText,
+    imageCount: pendingImages.length,
     savedAt: "刚刚"
   });
   event.currentTarget.reset();
+  resetPendingImages();
   importDialog.close();
   state.view = "inbox";
   render();
@@ -475,7 +589,6 @@ organizeForm.addEventListener("submit", event => {
     title: form.get("title").trim(),
     image: "assets/garlic-broccoli.png",
     source: item.platform,
-    sourceUrl: item.url,
     time: Number(form.get("time")),
     difficulty: form.get("difficulty"),
     servings: Number(form.get("servings")),
@@ -489,6 +602,7 @@ organizeForm.addEventListener("submit", event => {
 
   state.recipes.unshift(recipe);
   state.inbox = state.inbox.filter(entry => entry.id !== inboxId);
+  deleteInboxImages(inboxId).catch(() => {});
   state.view = "library";
   state.filter = "全部";
   organizeDialog.close();

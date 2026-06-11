@@ -1,10 +1,3 @@
-const ALLOWED_HOSTS = [
-  "xiaohongshu.com",
-  "xhslink.com",
-  "douyin.com",
-  "iesdouyin.com"
-];
-
 export default {
   async fetch(request, env) {
     const corsHeaders = createCorsHeaders(request, env);
@@ -16,15 +9,19 @@ export default {
 
     const apiKey = normalizeApiKey(env.DEEPSEEK_API_KEY);
     const keyLooksValid = isValidApiKey(apiKey);
+    const visionConfigured = Boolean(env.AI);
+    const serviceReady = keyLooksValid && visionConfigured;
 
     if (request.method === "GET" && url.pathname === "/health") {
       return json({
-        status: keyLooksValid ? "ready" : "configuration_required",
+        status: serviceReady ? "ready" : "configuration_required",
         provider: "deepseek",
         model: env.DEEPSEEK_MODEL || "deepseek-v4-flash",
+        visionModel: env.VISION_MODEL || "@cf/moonshotai/kimi-k2.6",
         apiKeyConfigured: Boolean(apiKey),
-        apiKeyLooksValid: keyLooksValid
-      }, keyLooksValid ? 200 : 503, corsHeaders);
+        apiKeyLooksValid: keyLooksValid,
+        visionConfigured
+      }, serviceReady ? 200 : 503, corsHeaders);
     }
 
     if (request.method !== "POST") {
@@ -45,23 +42,23 @@ export default {
     try {
       const payload = await request.json();
       const input = normalizeInput(payload);
-      const pageText = input.url ? await readPublicPage(input.url) : "";
-      if (!input.shareText && pageText.length < 80) {
-        return json(
-          { error: "平台没有返回足够的公开内容，请在收录时粘贴分享文案或视频字幕" },
-          422,
-          corsHeaders
-        );
+      if (!input.shareText && !input.images.length) {
+        return json({ error: "请至少提供教程文字或一张图片" }, 400, corsHeaders);
       }
-      const sourceText = buildSourceText(input, pageText);
+      if (input.images.length && !env.AI) {
+        return json({ error: "Worker 尚未配置 Cloudflare AI 图片识别绑定" }, 500, corsHeaders);
+      }
 
-      if (!sourceText.trim()) {
-        return json({ error: "没有可用于识别的教程内容，请补充分享文案或字幕" }, 400, corsHeaders);
-      }
+      const imageTexts = await recognizeImages(input.images, env);
+      const sourceText = buildSourceText(input, imageTexts);
 
       const recipe = await createRecipeDraft(sourceText, env, apiKey);
       return json(
-        { recipe, needsMoreText: recipe.needsMoreText },
+        {
+          recipe,
+          needsMoreText: recipe.needsMoreText,
+          imageCount: input.images.length
+        },
         200,
         corsHeaders
       );
@@ -103,97 +100,65 @@ function isValidApiKey(value) {
 }
 
 function normalizeInput(payload) {
+  const images = Array.isArray(payload?.images)
+    ? payload.images
+      .map(image => String(image || ""))
+      .filter(Boolean)
+      .slice(0, 6)
+    : [];
+
+  for (const image of images) {
+    if (!/^data:image\/(?:jpeg|png|webp);base64,/i.test(image)) {
+      throw createHttpError("图片格式不受支持，请使用 JPG、PNG 或 WebP", 400);
+    }
+    if (image.length > 2.1 * 1024 * 1024) {
+      throw createHttpError("单张图片过大，请压缩后重试", 413);
+    }
+  }
+
   return {
-    url: String(payload?.url || "").trim(),
     title: String(payload?.title || "").trim().slice(0, 200),
     platform: String(payload?.platform || "其他").trim().slice(0, 30),
-    shareText: String(payload?.shareText || "").trim().slice(0, 12000)
+    shareText: String(payload?.shareText || "").trim().slice(0, 12000),
+    images
   };
 }
 
-function isAllowedHost(hostname) {
-  const host = hostname.toLowerCase();
-  return ALLOWED_HOSTS.some(allowed => host === allowed || host.endsWith(`.${allowed}`));
-}
-
-async function readPublicPage(url, redirectsLeft = 3) {
-  let parsed;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw createHttpError("教程链接格式不正确", 400);
-  }
-
-  if (parsed.protocol !== "https:" || !isAllowedHost(parsed.hostname)) {
-    throw createHttpError("目前仅支持小红书和抖音的 HTTPS 分享链接", 400);
-  }
-
-  const response = await fetch(parsed.toString(), {
-    redirect: "manual",
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; RecipeDraftBot/1.0)",
-      "Accept": "text/html,application/xhtml+xml"
+async function recognizeImages(images, env) {
+  const content = [
+    {
+      type: "text",
+      text: [
+        `以下 ${images.length} 张图片按上传顺序组成同一份菜谱教程。`,
+        "请逐张识别所有可见的中文文字、食材、用量、火候、时间和制作步骤。",
+        "用“第1张”“第2张”等标题保留图片顺序；重复内容只需注明重复。",
+        "看不清的内容标记为[无法辨认]，不要凭空补充。只输出识别结果。"
+      ].join("\n")
+    },
+    ...images.map(dataUrl => ({
+      type: "image_url",
+      image_url: { url: dataUrl, detail: "high" }
+    }))
+  ];
+  const result = await env.AI.run(
+    env.VISION_MODEL || "@cf/moonshotai/kimi-k2.6",
+    {
+      messages: [{ role: "user", content }],
+      max_completion_tokens: 4000,
+      temperature: 0.1
     }
-  });
-
-  if (response.status >= 300 && response.status < 400) {
-    if (!redirectsLeft) return "";
-    const location = response.headers.get("Location");
-    if (!location) return "";
-    return readPublicPage(new URL(location, parsed).toString(), redirectsLeft - 1);
-  }
-
-  if (!response.ok) return "";
-  const contentType = response.headers.get("Content-Type") || "";
-  if (!contentType.includes("text/html")) return "";
-
-  const html = (await response.text()).slice(0, 500000);
-  return extractPageText(html).slice(0, 16000);
+  );
+  const text = result?.choices?.[0]?.message?.content;
+  if (!text) throw createHttpError("视觉模型没有返回有效的图片识别结果", 502);
+  return [String(text).trim().slice(0, 24000)];
 }
 
-function extractPageText(html) {
-  const metadata = [];
-  for (const match of html.matchAll(/<meta\b[^>]*>/gi)) {
-    const tag = match[0];
-    const key = getAttribute(tag, "name") || getAttribute(tag, "property");
-    if (!["description", "og:title", "og:description"].includes(key?.toLowerCase())) continue;
-    const content = getAttribute(tag, "content");
-    if (content) metadata.push(content);
-  }
-
-  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "";
-  const body = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ");
-
-  return decodeEntities([title, ...metadata, body].join("\n"))
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function getAttribute(tag, name) {
-  const match = tag.match(new RegExp(`${name}=["']([^"']*)["']`, "i"));
-  return match?.[1] || "";
-}
-
-function decodeEntities(text) {
-  return text
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, "\"")
-    .replace(/&#39;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">");
-}
-
-function buildSourceText(input, pageText) {
+function buildSourceText(input, imageTexts) {
   return [
     `平台：${input.platform}`,
     `用户填写的标题：${input.title || "未填写"}`,
-    input.url ? `教程链接：${input.url}` : "",
-    input.shareText ? `分享文案或字幕：\n${input.shareText}` : "",
-    pageText ? `公开页面内容：\n${pageText}` : ""
+    input.shareText ? `用户提供的教程文字或字幕：\n${input.shareText}` : "",
+    ...imageTexts.map(text => `多张图片识别结果：\n${text || "[未识别到有效内容]"}`)
   ].filter(Boolean).join("\n\n");
 }
 
@@ -252,7 +217,8 @@ async function createRecipeDraft(sourceText, env, apiKey) {
 function buildDeepSeekPrompt() {
   return [
     "你是中文家常菜谱整理助手。请只输出 JSON，不要输出 Markdown 或解释。",
-    "从教程文字中提取可执行的菜谱草稿，不要把链接本身当作事实来源。",
+    "从用户文字和多张图片的识别结果中提取可执行的菜谱草稿。",
+    "图片按编号排列，请结合所有图片去重并恢复完整的食材清单和步骤顺序。",
     "没有明确用量时填写“适量”；没有明确时间时给出保守估计。",
     "若内容不足以可靠提取至少两种食材和两个步骤，needsMoreText 必须为 true。",
     "不要虚构教程中完全没有依据的关键食材或烹饪方法。",

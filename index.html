@@ -64,19 +64,21 @@
         </div>
         <button class="icon-button" type="button" data-close-import aria-label="关闭">×</button>
       </div>
-      <p class="modal-copy">粘贴小红书、抖音或其他平台的分享链接，先收进待整理箱，稍后再补全食材和步骤。</p>
-      <label class="field">
-        <span>教程链接</span>
-        <input name="url" type="url" placeholder="https://..." required>
-      </label>
+      <p class="modal-copy">粘贴教程文字，或上传包含食材和步骤的截图。一次最多选择 6 张图片。</p>
       <label class="field">
         <span>菜名或备注</span>
         <input name="title" type="text" placeholder="例如：看起来很下饭的鸡翅">
       </label>
       <label class="field">
-        <span>分享文案或字幕（推荐）</span>
-        <textarea name="shareText" rows="5" placeholder="粘贴平台分享文案、视频字幕或作者写的食材步骤。链接无法直接读取时，会优先根据这里的内容生成草稿。"></textarea>
+        <span>教程文字或字幕</span>
+        <textarea name="shareText" rows="5" placeholder="粘贴作者配文、食材清单、视频字幕或自己记录的步骤。"></textarea>
       </label>
+      <label class="field">
+        <span>菜谱图片</span>
+        <input id="recipeImages" name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+        <small class="field-help">支持 JPG、PNG、WebP，最多 6 张；图片仅用于识别并保存在当前浏览器。</small>
+      </label>
+      <div id="imagePreview" class="image-preview" aria-live="polite"></div>
       <div class="platform-row" aria-label="来源平台">
         <label><input type="radio" name="platform" value="小红书" checked><span>小红书</span></label>
         <label><input type="radio" name="platform" value="抖音"><span>抖音</span></label>
