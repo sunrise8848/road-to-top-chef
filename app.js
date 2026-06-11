@@ -81,6 +81,7 @@ const recipeApiUrl = window.RECIPE_API_URL?.trim() || "";
 let recognizeRequestId = 0;
 let pendingImages = [];
 let pendingImageTask = null;
+let previewImageUrls = [];
 
 const IMAGE_DB_NAME = "zaobian-images";
 const IMAGE_STORE_NAME = "inbox-images";
@@ -338,7 +339,10 @@ async function recognizeRecipe(item, knownImages) {
   setRecognizeStatus("正在识别图片和文字并生成菜谱草稿…", "loading");
 
   try {
-    const images = knownImages || await getInboxImages(item.id);
+    const storedImages = knownImages || await getInboxImages(item.id);
+    const images = await Promise.all(storedImages.map(image =>
+      typeof image === "string" ? image : blobToDataUrl(image)
+    ));
     const response = await fetch(recipeApiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -485,12 +489,18 @@ function toggleTimer(defaultSeconds) {
 }
 
 function resetPendingImages() {
+  releasePreviewImageUrls();
   pendingImages = [];
   pendingImageTask = null;
   document.querySelector("#recipeImages").value = "";
   document.querySelector("#importSubmit").disabled = false;
   setImportStatus("");
   renderImagePreview();
+}
+
+function releasePreviewImageUrls() {
+  previewImageUrls.forEach(url => URL.revokeObjectURL(url));
+  previewImageUrls = [];
 }
 
 function setImportStatus(message, type = "") {
@@ -500,12 +510,20 @@ function setImportStatus(message, type = "") {
 }
 
 function renderImagePreview() {
+  releasePreviewImageUrls();
   document.querySelector("#imagePreview").innerHTML = pendingImages.map((image, index) => `
     <figure>
-      <img src="${image}" alt="待识别图片 ${index + 1}">
+      <img src="${previewImageSource(image)}" alt="待识别图片 ${index + 1}">
       <figcaption>${index + 1}</figcaption>
     </figure>
   `).join("");
+}
+
+function previewImageSource(image) {
+  if (typeof image === "string") return image;
+  const url = URL.createObjectURL(image);
+  previewImageUrls.push(url);
+  return url;
 }
 
 function blobToDataUrl(blob) {
@@ -547,7 +565,7 @@ async function compressImage(file) {
   const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.78));
   if (!blob) throw new Error("图片压缩失败");
   if (blob.size > 1.5 * 1024 * 1024) throw new Error("图片压缩后仍然过大，请选择尺寸较小的图片");
-  return blobToDataUrl(blob);
+  return blob;
 }
 
 document.querySelector("#recipeImages").addEventListener("change", async event => {
