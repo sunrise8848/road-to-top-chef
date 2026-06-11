@@ -49,14 +49,37 @@ export default {
         return json({ error: "Worker 尚未配置 Cloudflare AI 图片识别绑定" }, 500, corsHeaders);
       }
 
-      const recipe = input.images.length
-        ? await createImageRecipeDraft(input, env)
-        : await createRecipeDraft(buildSourceText(input), env, apiKey);
+      let recipe;
+      let recognitionMode = "text";
+      let recognizedImageCount = 0;
+
+      if (input.images.length) {
+        try {
+          recipe = await createImageRecipeDraft(input, env);
+          recognitionMode = "vision";
+          recognizedImageCount = input.images.length;
+        } catch (error) {
+          if (!isWorkersAiQuotaError(error)) throw error;
+          if (!input.shareText) {
+            throw createHttpError(
+              "今日 Cloudflare 图片识别免费额度已用完。请补充教程文字后重试，或升级 Workers Paid 计划",
+              429
+            );
+          }
+          recipe = await createRecipeDraft(buildSourceText(input), env, apiKey);
+          recognitionMode = "text_fallback";
+        }
+      } else {
+        recipe = await createRecipeDraft(buildSourceText(input), env, apiKey);
+      }
+
       return json(
         {
           recipe,
           needsMoreText: recipe.needsMoreText,
-          imageCount: input.images.length
+          imageCount: recognizedImageCount,
+          submittedImageCount: input.images.length,
+          recognitionMode
         },
         200,
         corsHeaders
@@ -171,6 +194,16 @@ function buildSourceText(input) {
     `用户填写的标题：${input.title || "未填写"}`,
     input.shareText ? `用户提供的教程文字或字幕：\n${input.shareText}` : ""
   ].filter(Boolean).join("\n\n");
+}
+
+function isWorkersAiQuotaError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return (
+    message.includes("daily free allocation") ||
+    message.includes("10,000 neurons") ||
+    message.includes("10000 neurons") ||
+    (message.includes("workers paid plan") && message.includes("neurons"))
+  );
 }
 
 async function createRecipeDraft(sourceText, env, apiKey) {

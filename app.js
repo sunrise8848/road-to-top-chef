@@ -379,11 +379,18 @@ async function recognizeRecipe(item, knownImages) {
     if (requestId !== recognizeRequestId || !organizeDialog.open) return;
 
     fillRecipeDraft(result.recipe);
-    setRecognizeStatus(
-      result.needsMoreText
-        ? "已根据图片和文字生成草稿，但信息可能不完整，请重点检查食材用量和步骤。"
-        : `已识别 ${result.imageCount || 0} 张图片并生成草稿，请检查后保存。`
-    );
+    if (result.recognitionMode === "text_fallback") {
+      setRecognizeStatus(
+        "今日图片识别免费额度已用完，已根据你填写的教程文字生成草稿；图片内容未被读取，请重点检查。",
+        "error"
+      );
+    } else {
+      setRecognizeStatus(
+        result.needsMoreText
+          ? "已根据图片和文字生成草稿，但信息可能不完整，请重点检查食材用量和步骤。"
+          : `已识别 ${result.imageCount || 0} 张图片并生成草稿，请检查后保存。`
+      );
+    }
   } catch (error) {
     if (requestId !== recognizeRequestId || !organizeDialog.open) return;
     const message = error.name === "AbortError"
