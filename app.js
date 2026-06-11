@@ -1,6 +1,6 @@
 const seedRecipes = [
   {
-    id: 1, title: "番茄炒蛋", image: "assets/tomato-eggs.png", source: "小红书",
+    id: 1, title: "番茄炒蛋", image: "assets/tomato-eggs.png",
     time: 15, difficulty: "简单", servings: 2, favorite: true, cooked: 8,
     tags: ["快手菜", "下饭", "15分钟"],
     ingredients: [["番茄", "2个"], ["鸡蛋", "3个"], ["盐", "2克"], ["白糖", "1小勺"], ["葱花", "少许"]],
@@ -13,7 +13,7 @@ const seedRecipes = [
     note: "鸡蛋不要炒老。番茄偏酸时加一小勺糖，最后不需要勾芡。"
   },
   {
-    id: 2, title: "土豆烧鸡", image: "assets/braised-chicken.png", source: "抖音",
+    id: 2, title: "土豆烧鸡", image: "assets/braised-chicken.png",
     time: 50, difficulty: "中等", servings: 3, favorite: true, cooked: 5,
     tags: ["炖菜", "下饭", "周末"],
     ingredients: [["鸡腿肉", "500克"], ["土豆", "2个"], ["生抽", "2勺"], ["老抽", "1勺"], ["冰糖", "15克"], ["姜", "4片"]],
@@ -27,7 +27,7 @@ const seedRecipes = [
     note: "第二次做时土豆切大块更合适；收汁前先尝咸淡，不再额外加盐。"
   },
   {
-    id: 3, title: "麻婆豆腐", image: "assets/mapo-tofu.png", source: "小红书",
+    id: 3, title: "麻婆豆腐", image: "assets/mapo-tofu.png",
     time: 25, difficulty: "中等", servings: 2, favorite: false, cooked: 2,
     tags: ["川味", "下饭", "微辣"],
     ingredients: [["嫩豆腐", "1盒"], ["牛肉末", "80克"], ["豆瓣酱", "1勺"], ["花椒粉", "适量"], ["蒜末", "1勺"], ["水淀粉", "3勺"]],
@@ -40,7 +40,7 @@ const seedRecipes = [
     note: "豆腐入锅后不要频繁翻动，用锅铲背轻推。花椒粉出锅前再放，香味更明显。"
   },
   {
-    id: 4, title: "蒜蓉西兰花", image: "assets/garlic-broccoli.png", source: "自己记录",
+    id: 4, title: "蒜蓉西兰花", image: "assets/garlic-broccoli.png",
     time: 12, difficulty: "简单", servings: 2, favorite: false, cooked: 4,
     tags: ["素菜", "快手菜", "清淡"],
     ingredients: [["西兰花", "1颗"], ["蒜", "4瓣"], ["蚝油", "1小勺"], ["盐", "适量"]],
@@ -54,8 +54,8 @@ const seedRecipes = [
 ];
 
 const seedInbox = [
-  { id: 101, title: "空气炸锅蜜汁鸡翅", platform: "小红书", shareText: "鸡翅腌制后放入空气炸锅，刷蜜汁烤至上色。", imageCount: 0, savedAt: "今天 11:28" },
-  { id: 102, title: "先收着：一锅到底焖饭", platform: "抖音", shareText: "大米、腊肠和蔬菜放入电饭煲一起焖熟。", imageCount: 0, savedAt: "昨天 20:14" }
+  { id: 101, title: "空气炸锅蜜汁鸡翅", shareText: "鸡翅腌制后放入空气炸锅，刷蜜汁烤至上色。", savedAt: "今天 11:28" },
+  { id: 102, title: "先收着：一锅到底焖饭", shareText: "大米、腊肠和蔬菜放入电饭煲一起焖熟。", savedAt: "昨天 20:14" }
 ];
 
 const state = {
@@ -79,16 +79,9 @@ const cookDialog = document.querySelector("#cookDialog");
 const searchInput = document.querySelector("#searchInput");
 const recipeApiUrl = window.RECIPE_API_URL?.trim() || "";
 let recognizeRequestId = 0;
-let pendingImages = [];
-let pendingImageTask = null;
-let previewImageUrls = [];
-
-const IMAGE_DB_NAME = "zaobian-images";
-const IMAGE_STORE_NAME = "inbox-images";
-const MAX_IMAGES = 6;
-const MAX_IMAGE_EDGE = 1200;
-const IMAGE_QUALITY = 0.7;
-const MAX_IMAGE_BYTES = 800 * 1024;
+const DEFAULT_COVER = "assets/garlic-broccoli.png";
+const MAX_COVER_EDGE = 1200;
+const MAX_COVER_BYTES = 450 * 1024;
 
 function save() {
   localStorage.setItem("zaobian-recipes", JSON.stringify(state.recipes));
@@ -107,7 +100,7 @@ function toast(message) {
 function filteredRecipes() {
   return state.recipes.filter(recipe => {
     const query = state.query.trim().toLowerCase();
-    const text = [recipe.title, recipe.source, ...recipe.tags, ...recipe.ingredients.flat()].join(" ").toLowerCase();
+    const text = [recipe.title, ...recipe.tags, ...recipe.ingredients.flat()].join(" ").toLowerCase();
     const matchesQuery = !query || text.includes(query);
     const matchesView = state.view !== "favorites" || recipe.favorite;
     const matchesFilter = state.filter === "全部" || recipe.tags.includes(state.filter) ||
@@ -147,7 +140,7 @@ function recipeCard(recipe) {
       <img class="recipe-image" src="${recipe.image}" alt="${recipe.title}">
       <button class="favorite ${recipe.favorite ? "on" : ""}" data-favorite="${recipe.id}" aria-label="${recipe.favorite ? "取消常做" : "加入常做"}">${recipe.favorite ? "★" : "☆"}</button>
       <div class="recipe-body">
-        <div class="recipe-meta"><span class="source-dot"></span><span>${recipe.source}</span><span>·</span><span>${recipe.time} 分钟</span><span>·</span><span>做过 ${recipe.cooked} 次</span></div>
+        <div class="recipe-meta"><span class="source-dot"></span><span>${recipe.time} 分钟</span><span>·</span><span>做过 ${recipe.cooked} 次</span></div>
         <h3>${recipe.title}</h3>
         <div class="tag-row">${recipe.tags.map(tag => `<span class="tag">${tag}</span>`).join("")}</div>
       </div>
@@ -167,14 +160,14 @@ function renderInbox() {
     </div>
     ${state.inbox.length ? `<div class="inbox-list">${state.inbox.map(item => `
       <article class="inbox-item">
-        <div class="platform-mark ${item.platform === "抖音" ? "douyin" : ""}">${item.platform.slice(0,1)}</div>
-        <div><h3>${item.title}</h3><p>${item.platform} · ${item.imageCount || 0} 张图片 · 收录于 ${item.savedAt}</p></div>
+        <div class="tutorial-mark">文</div>
+        <div><h3>${item.title}</h3><p>文字教程 · 收录于 ${item.savedAt}</p></div>
         <div class="inbox-actions">
           <button class="button secondary small" data-delete-inbox="${item.id}">删除</button>
           <button class="button primary small" data-organize="${item.id}">开始整理</button>
         </div>
       </article>`).join("")}</div>` :
-      `<div class="empty"><strong>待整理箱已经清空</strong><span>下次看到喜欢的教程，上传截图或粘贴文字就能先收进来。</span></div>`}
+      `<div class="empty"><strong>待整理箱已经清空</strong><span>下次看到喜欢的教程，粘贴文字就能先收进来。</span></div>`}
   `;
 }
 
@@ -192,7 +185,7 @@ function openRecipe(id) {
     <div class="detail-hero">
       <img src="${recipe.image}" alt="${recipe.title}">
       <button class="icon-button detail-close" data-close-detail aria-label="关闭">×</button>
-      <div class="detail-title"><span>${recipe.source} · 做过 ${recipe.cooked} 次</span><h2>${recipe.title}</h2><div class="tag-row">${recipe.tags.map(tag => `<span class="tag">${tag}</span>`).join("")}</div></div>
+      <div class="detail-title"><span>做过 ${recipe.cooked} 次</span><h2>${recipe.title}</h2><div class="tag-row">${recipe.tags.map(tag => `<span class="tag">${tag}</span>`).join("")}</div></div>
     </div>
     <div class="detail-content">
       <div class="detail-stats">
@@ -209,7 +202,10 @@ function openRecipe(id) {
       </div>
     </div>
     <div class="detail-footer">
-      <button class="button secondary" data-favorite="${recipe.id}">${recipe.favorite ? "★ 已加入常做" : "☆ 加入常做"}</button>
+      <div>
+        <button class="button secondary" data-edit-recipe="${recipe.id}">编辑菜谱</button>
+        <button class="button secondary" data-favorite="${recipe.id}">${recipe.favorite ? "★ 已加入常做" : "☆ 加入常做"}</button>
+      </div>
       <button class="button primary" data-start-cook="${recipe.id}">开始做菜 →</button>
     </div>`;
   if (!recipeDialog.open) recipeDialog.showModal();
@@ -265,48 +261,61 @@ function finishCooking() {
   toast(`已记录：完成 ${state.activeRecipe.title}`);
 }
 
-function openImageDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(IMAGE_DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(IMAGE_STORE_NAME)) {
-        request.result.createObjectStore(IMAGE_STORE_NAME);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function imageStoreAction(mode, id, value) {
-  const db = await openImageDb();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(IMAGE_STORE_NAME, mode === "get" ? "readonly" : "readwrite");
-    const store = transaction.objectStore(IMAGE_STORE_NAME);
-    const request = mode === "put" ? store.put(value, id) :
-      mode === "delete" ? store.delete(id) :
-      store.get(id);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-    transaction.oncomplete = () => db.close();
-  });
-}
-
-const getInboxImages = id => imageStoreAction("get", id).then(images => images || []);
-const saveInboxImages = (id, images) => imageStoreAction("put", id, images);
-const deleteInboxImages = id => imageStoreAction("delete", id);
-
 async function openOrganizer(id) {
   const item = state.inbox.find(entry => entry.id === Number(id));
   if (!item) return;
 
-  organizeForm.reset();
+  prepareRecipeForm("create");
   organizeForm.elements.inboxId.value = item.id;
   organizeForm.elements.title.value = item.title;
   organizeDialog.showModal();
   organizeForm.elements.title.focus();
-  const images = await getInboxImages(item.id).catch(() => []);
-  await recognizeRecipe(item, images);
+  await recognizeRecipe(item);
+}
+
+function prepareRecipeForm(mode, recipe) {
+  organizeForm.reset();
+  organizeForm.elements.inboxId.value = "";
+  organizeForm.elements.recipeId.value = recipe?.id || "";
+  setCover(recipe?.image || DEFAULT_COVER);
+  document.querySelector("#organizeStatus").className = "recognize-status";
+  document.querySelector("#organizeStatus").textContent = "";
+  document.querySelector("#organizeEyebrow").textContent = mode === "edit" ? "编辑菜谱" : "整理教程";
+  document.querySelector("#organizeTitle").textContent = mode === "edit" ? "修改菜谱" : "生成新的菜谱";
+  document.querySelector("#organizeSubmit").textContent = mode === "edit" ? "保存修改" : "生成菜谱";
+  organizeDialog.querySelector("[data-recognize]").hidden = mode === "edit";
+}
+
+function openManualEditor() {
+  prepareRecipeForm("create");
+  organizeDialog.showModal();
+  organizeForm.elements.title.focus();
+}
+
+function openRecipeEditor(id) {
+  const recipe = state.recipes.find(item => item.id === Number(id));
+  if (!recipe) return;
+
+  prepareRecipeForm("edit", recipe);
+  organizeForm.elements.title.value = recipe.title;
+  organizeForm.elements.time.value = recipe.time;
+  organizeForm.elements.servings.value = recipe.servings;
+  organizeForm.elements.difficulty.value = recipe.difficulty;
+  organizeForm.elements.tags.value = recipe.tags.join(", ");
+  organizeForm.elements.ingredients.value = recipe.ingredients
+    .map(([name, amount]) => `${name} | ${amount}`)
+    .join("\n");
+  organizeForm.elements.steps.value = recipe.steps.map(step => step.text).join("\n");
+  organizeForm.elements.note.value = recipe.note === "暂无个人调整。" ? "" : recipe.note;
+  recipeDialog.close();
+  organizeDialog.showModal();
+  organizeForm.elements.title.focus();
+}
+
+function setCover(image) {
+  const cover = image || DEFAULT_COVER;
+  organizeForm.elements.cover.value = cover;
+  document.querySelector("#coverPreview").src = cover;
 }
 
 function setRecognizeStatus(message, type = "") {
@@ -330,9 +339,9 @@ function fillRecipeDraft(draft) {
   organizeForm.elements.note.value = draft.note || "";
 }
 
-async function recognizeRecipe(item, knownImages) {
+async function recognizeRecipe(item) {
   if (!recipeApiUrl) {
-    setRecognizeStatus("尚未配置识别服务。可以先手动整理，部署 Worker 后在 config.js 中填写接口地址。", "error");
+    setRecognizeStatus("尚未配置 AI 整理服务。可以先手动整理，部署 Worker 后在 config.js 中填写接口地址。", "error");
     return;
   }
 
@@ -344,18 +353,14 @@ async function recognizeRecipe(item, knownImages) {
     elapsedSeconds += 1;
     if (requestId === recognizeRequestId && organizeDialog.open) {
       setRecognizeStatus(
-        `AI 正在读取图片并生成菜谱，已等待 ${elapsedSeconds} 秒（通常需要 15–60 秒）…`,
+        `AI 正在整理教程文字，已等待 ${elapsedSeconds} 秒…`,
         "loading"
       );
     }
   }, 1000);
-  setRecognizeStatus("AI 正在读取图片并生成菜谱（通常需要 15–60 秒）…", "loading");
+  setRecognizeStatus("AI 正在整理教程文字并生成菜谱草稿…", "loading");
 
   try {
-    const storedImages = knownImages || await getInboxImages(item.id);
-    const images = await Promise.all(storedImages.map(image =>
-      typeof image === "string" ? image : blobToDataUrl(image)
-    ));
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000);
     let response;
@@ -366,35 +371,26 @@ async function recognizeRecipe(item, knownImages) {
         signal: controller.signal,
         body: JSON.stringify({
           title: item.title,
-          platform: item.platform,
-          shareText: item.shareText || "",
-          images
+          shareText: item.shareText || ""
         })
       });
     } finally {
       clearTimeout(timeoutId);
     }
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "识别服务暂时不可用");
+    if (!response.ok) throw new Error(result.error || "AI 整理服务暂时不可用");
     if (requestId !== recognizeRequestId || !organizeDialog.open) return;
 
     fillRecipeDraft(result.recipe);
-    if (result.recognitionMode === "text_fallback") {
-      setRecognizeStatus(
-        "今日图片识别免费额度已用完，已根据你填写的教程文字生成草稿；图片内容未被读取，请重点检查。",
-        "error"
-      );
-    } else {
-      setRecognizeStatus(
-        result.needsMoreText
-          ? "已根据图片和文字生成草稿，但信息可能不完整，请重点检查食材用量和步骤。"
-          : `已识别 ${result.imageCount || 0} 张图片并生成草稿，请检查后保存。`
-      );
-    }
+    setRecognizeStatus(
+      result.needsMoreText
+        ? "已生成草稿，但原文信息可能不完整，请重点检查食材用量和步骤。"
+        : "已根据教程文字生成草稿，请检查后保存。"
+    );
   } catch (error) {
     if (requestId !== recognizeRequestId || !organizeDialog.open) return;
     const message = error.name === "AbortError"
-      ? "识别超过 120 秒，已停止。请减少图片数量后重试"
+      ? "整理超过 120 秒，已停止，请稍后重试"
       : error.message;
     setRecognizeStatus(`${message}。你仍然可以手动填写并生成菜谱。`, "error");
   } finally {
@@ -430,8 +426,10 @@ document.addEventListener("click", event => {
     render();
   }
   if (event.target.closest("[data-action='import']")) {
-    resetPendingImages();
+    document.querySelector("#importForm").reset();
+    setImportStatus("");
     importDialog.showModal();
+    importDialog.querySelector("[name='title']").focus();
   }
   if (event.target.closest("[data-close-import]")) importDialog.close();
   if (event.target.closest("[data-close-organize]")) {
@@ -443,9 +441,7 @@ document.addEventListener("click", event => {
     if (item) recognizeRecipe(item);
   }
   if (event.target.closest("[data-action='manual-add']")) {
-    resetPendingImages();
-    importDialog.showModal();
-    importDialog.querySelector("[name='title']").focus();
+    openManualEditor();
   }
   const filter = event.target.closest("[data-filter]");
   if (filter) { state.filter = filter.dataset.filter; render(); }
@@ -460,6 +456,8 @@ document.addEventListener("click", event => {
   }
   const card = event.target.closest("[data-recipe]");
   if (card) openRecipe(card.dataset.recipe);
+  const editRecipe = event.target.closest("[data-edit-recipe]");
+  if (editRecipe) openRecipeEditor(editRecipe.dataset.editRecipe);
   if (event.target.closest("[data-close-detail]")) recipeDialog.close();
   const start = event.target.closest("[data-start-cook]");
   if (start) openCook(start.dataset.startCook);
@@ -470,7 +468,6 @@ document.addEventListener("click", event => {
   if (del) {
     const id = Number(del.dataset.deleteInbox);
     state.inbox = state.inbox.filter(entry => entry.id !== id);
-    deleteInboxImages(id).catch(() => {});
     render();
   }
   if (event.target.closest("[data-cook-prev]") && state.cookStep > 0) { state.cookStep--; resetTimer(); renderCook(); }
@@ -520,42 +517,10 @@ function toggleTimer(defaultSeconds) {
   renderCook();
 }
 
-function resetPendingImages() {
-  releasePreviewImageUrls();
-  pendingImages = [];
-  pendingImageTask = null;
-  document.querySelector("#recipeImages").value = "";
-  document.querySelector("#importSubmit").disabled = false;
-  setImportStatus("");
-  renderImagePreview();
-}
-
-function releasePreviewImageUrls() {
-  previewImageUrls.forEach(url => URL.revokeObjectURL(url));
-  previewImageUrls = [];
-}
-
 function setImportStatus(message, type = "") {
   const status = document.querySelector("#importStatus");
   status.textContent = message;
   status.className = message ? `recognize-status show ${type}`.trim() : "recognize-status";
-}
-
-function renderImagePreview() {
-  releasePreviewImageUrls();
-  document.querySelector("#imagePreview").innerHTML = pendingImages.map((image, index) => `
-    <figure>
-      <img src="${previewImageSource(image)}" alt="待识别图片 ${index + 1}">
-      <figcaption>${index + 1}</figcaption>
-    </figure>
-  `).join("");
-}
-
-function previewImageSource(image) {
-  if (typeof image === "string") return image;
-  const url = URL.createObjectURL(image);
-  previewImageUrls.push(url);
-  return url;
 }
 
 function blobToDataUrl(blob) {
@@ -585,7 +550,7 @@ function loadImage(file) {
 
 async function compressImage(file) {
   const image = await loadImage(file);
-  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
+  const scale = Math.min(1, MAX_COVER_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
   canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -594,98 +559,58 @@ async function compressImage(file) {
   context.fillStyle = "#fff";
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  let blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", IMAGE_QUALITY));
-  if (!blob) throw new Error("图片压缩失败");
-  if (blob.size > MAX_IMAGE_BYTES) {
-    blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.55));
+  let blob;
+  for (const quality of [0.78, 0.65, 0.5]) {
+    blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (blob && blob.size <= MAX_COVER_BYTES) break;
   }
-  if (!blob || blob.size > MAX_IMAGE_BYTES) {
+  if (!blob || blob.size > MAX_COVER_BYTES) {
     throw new Error("图片压缩后仍然过大，请选择尺寸较小的图片");
   }
-  return blob;
+  return blobToDataUrl(blob);
 }
 
-function formatBytes(bytes) {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-document.querySelector("#recipeImages").addEventListener("change", async event => {
-  const files = [...event.target.files];
-  if (!files.length) {
-    resetPendingImages();
-    return;
-  }
-  if (files.length > MAX_IMAGES) {
-    toast(`一次最多上传 ${MAX_IMAGES} 张图片`);
-    event.target.value = "";
-    return;
-  }
-
-  const submitButton = document.querySelector("#importSubmit");
-  submitButton.disabled = true;
-  setImportStatus(`正在处理 ${files.length} 张图片…`, "loading");
-  pendingImages = [];
-  renderImagePreview();
-
+document.querySelector("#coverImage").addEventListener("change", async event => {
+  const [file] = event.target.files;
+  if (!file) return;
+  event.target.disabled = true;
+  setRecognizeStatus("正在处理封面图…", "loading");
   try {
-    pendingImageTask = Promise.all(files.map(compressImage));
-    pendingImages = await pendingImageTask;
-    renderImagePreview();
-    const totalBytes = pendingImages.reduce((sum, image) => sum + image.size, 0);
-    setImportStatus(`已准备 ${pendingImages.length} 张图片，共 ${formatBytes(totalBytes)}，可以收进待整理。`);
+    setCover(await compressImage(file));
+    setRecognizeStatus("封面图已更新。");
   } catch (error) {
-    pendingImages = [];
-    pendingImageTask = null;
     event.target.value = "";
-    renderImagePreview();
-    setImportStatus(error.message, "error");
+    setRecognizeStatus(error.message, "error");
   } finally {
-    submitButton.disabled = false;
+    event.target.disabled = false;
   }
 });
 
-document.querySelector("#importForm").addEventListener("submit", async event => {
+document.querySelector("#resetCover").addEventListener("click", () => {
+  document.querySelector("#coverImage").value = "";
+  setCover(DEFAULT_COVER);
+  setRecognizeStatus("已恢复默认封面。");
+});
+
+document.querySelector("#importForm").addEventListener("submit", event => {
   event.preventDefault();
   const importForm = event.currentTarget;
-  const submitButton = document.querySelector("#importSubmit");
-  submitButton.disabled = true;
-  if (pendingImageTask) {
-    setImportStatus("正在完成图片处理，请稍候…", "loading");
-    try {
-      await pendingImageTask;
-    } catch {
-      submitButton.disabled = false;
-      return;
-    }
-  }
   const form = new FormData(importForm);
   const shareText = form.get("shareText")?.trim() || "";
-  if (!shareText && !pendingImages.length) {
-    setImportStatus("请至少填写教程文字或上传一张图片。", "error");
-    submitButton.disabled = false;
+  if (!shareText) {
+    setImportStatus("请填写教程文字或字幕。", "error");
     return;
   }
   const title = form.get("title")?.trim() || "未命名教程";
   const id = Date.now();
-  try {
-    setImportStatus("正在保存到待整理箱…", "loading");
-    if (pendingImages.length) await saveInboxImages(id, pendingImages);
-  } catch (error) {
-    setImportStatus(`图片保存失败：${error?.message || "请检查浏览器存储空间"}`, "error");
-    submitButton.disabled = false;
-    return;
-  }
   state.inbox.unshift({
     id,
     title,
-    platform: form.get("platform"),
     shareText,
-    imageCount: pendingImages.length,
     savedAt: "刚刚"
   });
   importForm.reset();
-  resetPendingImages();
+  setImportStatus("");
   importDialog.close();
   state.view = "inbox";
   render();
@@ -696,38 +621,40 @@ organizeForm.addEventListener("submit", event => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const inboxId = Number(form.get("inboxId"));
-  const item = state.inbox.find(entry => entry.id === inboxId);
-  if (!item) {
-    organizeDialog.close();
-    toast("这条待整理教程已不存在");
-    return;
-  }
-
-  const recipe = {
-    id: Date.now(),
+  const recipeId = Number(form.get("recipeId"));
+  const existingRecipe = state.recipes.find(recipe => recipe.id === recipeId);
+  const values = {
     title: form.get("title").trim(),
-    image: "assets/garlic-broccoli.png",
-    source: item.platform,
+    image: form.get("cover") || DEFAULT_COVER,
     time: Number(form.get("time")),
     difficulty: form.get("difficulty"),
     servings: Number(form.get("servings")),
-    favorite: false,
-    cooked: 0,
     tags: form.get("tags").split(/[,，]/).map(tag => tag.trim()).filter(Boolean),
     ingredients: parseIngredients(form.get("ingredients")),
     steps: parseSteps(form.get("steps")),
     note: form.get("note").trim() || "暂无个人调整。"
   };
 
-  state.recipes.unshift(recipe);
-  state.inbox = state.inbox.filter(entry => entry.id !== inboxId);
-  deleteInboxImages(inboxId).catch(() => {});
+  let recipe;
+  if (existingRecipe) {
+    Object.assign(existingRecipe, values);
+    recipe = existingRecipe;
+  } else {
+    recipe = {
+      id: Date.now(),
+      ...values,
+      favorite: false,
+      cooked: 0
+    };
+    state.recipes.unshift(recipe);
+  }
+  if (inboxId) state.inbox = state.inbox.filter(entry => entry.id !== inboxId);
   state.view = "library";
   state.filter = "全部";
   organizeDialog.close();
   event.currentTarget.reset();
   render();
-  toast(`“${recipe.title}”已生成菜谱`);
+  toast(existingRecipe ? `“${recipe.title}”已保存修改` : `“${recipe.title}”已生成菜谱`);
   openRecipe(recipe.id);
 });
 

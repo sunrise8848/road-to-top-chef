@@ -7,7 +7,3 @@ preview_urls = false
 [vars]
 ALLOWED_ORIGIN = "https://sunrise8848.github.io"
 DEEPSEEK_MODEL = "deepseek-v4-flash"
-VISION_MODEL = "@cf/moonshotai/kimi-k2.6"
-
-[ai]
-binding = "AI"

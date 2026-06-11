@@ -64,27 +64,16 @@
         </div>
         <button class="icon-button" type="button" data-close-import aria-label="关闭">×</button>
       </div>
-      <p class="modal-copy">粘贴教程文字，或上传包含食材和步骤的截图。一次最多选择 6 张图片。</p>
+      <p class="modal-copy">粘贴教程文案、视频字幕或自己记录的步骤，稍后由 AI 整理成菜谱。</p>
       <label class="field">
         <span>菜名或备注</span>
         <input name="title" type="text" placeholder="例如：看起来很下饭的鸡翅">
       </label>
       <label class="field">
         <span>教程文字或字幕</span>
-        <textarea name="shareText" rows="5" placeholder="粘贴作者配文、食材清单、视频字幕或自己记录的步骤。"></textarea>
+        <textarea name="shareText" rows="8" placeholder="粘贴食材清单、制作步骤、视频字幕或自己的文字记录。" required></textarea>
       </label>
-      <label class="field">
-        <span>菜谱图片</span>
-        <input id="recipeImages" name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple>
-        <small class="field-help">支持 JPG、PNG、WebP，最多 6 张；图片仅用于识别并保存在当前浏览器。</small>
-      </label>
-      <div id="imagePreview" class="image-preview" aria-live="polite"></div>
       <div id="importStatus" class="recognize-status" role="status"></div>
-      <div class="platform-row" aria-label="来源平台">
-        <label><input type="radio" name="platform" value="小红书" checked><span>小红书</span></label>
-        <label><input type="radio" name="platform" value="抖音"><span>抖音</span></label>
-        <label><input type="radio" name="platform" value="其他"><span>其他</span></label>
-      </div>
       <div class="modal-actions">
         <button class="button secondary" type="button" data-close-import>取消</button>
         <button class="button primary" id="importSubmit" type="submit">收进待整理</button>
@@ -100,15 +89,28 @@
     <form id="organizeForm">
       <div class="modal-head">
         <div>
-          <span class="eyebrow">整理教程</span>
-          <h2>生成新的菜谱</h2>
+          <span class="eyebrow" id="organizeEyebrow">整理教程</span>
+          <h2 id="organizeTitle">生成新的菜谱</h2>
         </div>
         <button class="icon-button" type="button" data-close-organize aria-label="关闭">×</button>
       </div>
       <p class="modal-copy">把视频里的关键内容记下来。食材和步骤每行填写一项，之后可以直接进入做菜模式。</p>
       <div id="organizeStatus" class="recognize-status" role="status"></div>
       <input name="inboxId" type="hidden">
+      <input name="recipeId" type="hidden">
+      <input name="cover" type="hidden">
       <div class="form-grid">
+        <label class="field field-wide">
+          <span>封面图</span>
+          <div class="cover-editor">
+            <img id="coverPreview" src="assets/garlic-broccoli.png" alt="菜谱封面预览">
+            <div>
+              <input id="coverImage" type="file" accept="image/jpeg,image/png,image/webp">
+              <small class="field-help">支持 JPG、PNG、WebP；图片会压缩后保存在当前浏览器。</small>
+              <button class="button secondary small" id="resetCover" type="button">恢复默认封面</button>
+            </div>
+          </div>
+        </label>
         <label class="field field-wide">
           <span>菜名</span>
           <input name="title" type="text" required>
@@ -147,9 +149,9 @@
         </label>
       </div>
       <div class="modal-actions">
-        <button class="button secondary" type="button" data-recognize>重新识别</button>
+        <button class="button secondary" type="button" data-recognize>重新整理</button>
         <button class="button secondary" type="button" data-close-organize>取消</button>
-        <button class="button primary" type="submit">生成菜谱</button>
+        <button class="button primary" id="organizeSubmit" type="submit">生成菜谱</button>
       </div>
     </form>
   </dialog>
