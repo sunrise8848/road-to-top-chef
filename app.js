@@ -640,6 +640,7 @@ document.querySelector("#recipeImages").addEventListener("change", async event =
 
 document.querySelector("#importForm").addEventListener("submit", async event => {
   event.preventDefault();
+  const importForm = event.currentTarget;
   const submitButton = document.querySelector("#importSubmit");
   submitButton.disabled = true;
   if (pendingImageTask) {
@@ -651,7 +652,7 @@ document.querySelector("#importForm").addEventListener("submit", async event => 
       return;
     }
   }
-  const form = new FormData(event.currentTarget);
+  const form = new FormData(importForm);
   const shareText = form.get("shareText")?.trim() || "";
   if (!shareText && !pendingImages.length) {
     setImportStatus("请至少填写教程文字或上传一张图片。", "error");
@@ -676,7 +677,7 @@ document.querySelector("#importForm").addEventListener("submit", async event => 
     imageCount: pendingImages.length,
     savedAt: "刚刚"
   });
-  event.currentTarget.reset();
+  importForm.reset();
   resetPendingImages();
   importDialog.close();
   state.view = "inbox";
