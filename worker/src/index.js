@@ -160,9 +160,10 @@ function buildDeepSeekPrompt() {
     "你是中文家常菜谱整理助手。请只输出 JSON，不要输出 Markdown 或解释。",
     "从用户提供的教程文字或字幕中提取可执行的菜谱草稿。",
     "没有明确用量时填写“适量”；没有明确时间时给出保守估计。",
+    "根据食材及用量估算整道菜的总热量，再除以 servings，返回每份热量 calories，单位为千卡；这只是近似营养估算。",
     "若内容不足以可靠提取至少两种食材和两个步骤，needsMoreText 必须为 true。",
     "不要虚构教程中完全没有依据的关键食材或烹饪方法。",
-    'JSON 格式示例：{"title":"番茄炒蛋","time":15,"servings":2,"difficulty":"简单","tags":["快手菜"],"ingredients":[{"name":"番茄","amount":"2个"}],"steps":[{"text":"番茄切块。"}],"note":"注意火候。","needsMoreText":false}'
+    'JSON 格式示例：{"title":"番茄炒蛋","time":15,"servings":2,"calories":230,"difficulty":"简单","tags":["快手菜"],"ingredients":[{"name":"番茄","amount":"2个"}],"steps":[{"text":"番茄切块。"}],"note":"注意火候。","needsMoreText":false}'
   ].join("\n");
 }
 
@@ -194,6 +195,7 @@ function normalizeRecipeDraft(value) {
     title: String(value.title).trim().slice(0, 100),
     time: clampInteger(value.time, 1, 1440, 30),
     servings: clampInteger(value.servings, 1, 50, 2),
+    calories: clampInteger(value.calories, 0, 10000, 0),
     difficulty,
     tags: Array.isArray(value.tags)
       ? value.tags.map(tag => String(tag).trim()).filter(Boolean).slice(0, 8)

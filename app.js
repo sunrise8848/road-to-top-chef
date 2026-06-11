@@ -1,7 +1,7 @@
 const seedRecipes = [
   {
     id: 1, title: "番茄炒蛋", image: "assets/tomato-eggs.png",
-    time: 15, difficulty: "简单", servings: 2, favorite: true, cooked: 8,
+    time: 15, calories: 230, difficulty: "简单", servings: 2, favorite: true, cooked: 8,
     tags: ["快手菜", "下饭", "15分钟"],
     ingredients: [["番茄", "2个"], ["鸡蛋", "3个"], ["盐", "2克"], ["白糖", "1小勺"], ["葱花", "少许"]],
     steps: [
@@ -14,7 +14,7 @@ const seedRecipes = [
   },
   {
     id: 2, title: "土豆烧鸡", image: "assets/braised-chicken.png",
-    time: 50, difficulty: "中等", servings: 3, favorite: true, cooked: 5,
+    time: 50, calories: 520, difficulty: "中等", servings: 3, favorite: true, cooked: 5,
     tags: ["炖菜", "下饭", "周末"],
     ingredients: [["鸡腿肉", "500克"], ["土豆", "2个"], ["生抽", "2勺"], ["老抽", "1勺"], ["冰糖", "15克"], ["姜", "4片"]],
     steps: [
@@ -28,7 +28,7 @@ const seedRecipes = [
   },
   {
     id: 3, title: "麻婆豆腐", image: "assets/mapo-tofu.png",
-    time: 25, difficulty: "中等", servings: 2, favorite: false, cooked: 2,
+    time: 25, calories: 360, difficulty: "中等", servings: 2, favorite: false, cooked: 2,
     tags: ["川味", "下饭", "微辣"],
     ingredients: [["嫩豆腐", "1盒"], ["牛肉末", "80克"], ["豆瓣酱", "1勺"], ["花椒粉", "适量"], ["蒜末", "1勺"], ["水淀粉", "3勺"]],
     steps: [
@@ -41,7 +41,7 @@ const seedRecipes = [
   },
   {
     id: 4, title: "蒜蓉西兰花", image: "assets/garlic-broccoli.png",
-    time: 12, difficulty: "简单", servings: 2, favorite: false, cooked: 4,
+    time: 12, calories: 120, difficulty: "简单", servings: 2, favorite: false, cooked: 4,
     tags: ["素菜", "快手菜", "清淡"],
     ingredients: [["西兰花", "1颗"], ["蒜", "4瓣"], ["蚝油", "1小勺"], ["盐", "适量"]],
     steps: [
@@ -146,9 +146,11 @@ function renderLibrary() {
 }
 
 function recipeCard(recipe) {
+  const calories = Number(recipe.calories);
   return `
     <article class="recipe-card" data-recipe="${recipe.id}" tabindex="0">
       <img class="recipe-image" src="${recipe.image}" alt="${recipe.title}">
+      <span class="calorie-badge">${calories > 0 ? `约 ${calories} 千卡/份` : "热量待估算"}</span>
       <button class="favorite ${recipe.favorite ? "on" : ""}" data-favorite="${recipe.id}" aria-label="${recipe.favorite ? "取消常做" : "加入常做"}">${recipe.favorite ? "★" : "☆"}</button>
       <div class="recipe-body">
         <div class="recipe-meta"><span class="source-dot"></span><span>${recipe.time} 分钟</span><span>·</span><span>做过 ${recipe.cooked} 次</span></div>
@@ -203,7 +205,7 @@ function openRecipe(id) {
         <div class="stat"><span>准备与烹饪</span><strong>${recipe.time} 分钟</strong></div>
         <div class="stat"><span>难度</span><strong>${recipe.difficulty}</strong></div>
         <div class="stat"><span>份量</span><strong>${recipe.servings} 人份</strong></div>
-        <div class="stat"><span>步骤</span><strong>${recipe.steps.length} 步</strong></div>
+        <div class="stat"><span>估算热量</span><strong>${Number(recipe.calories) > 0 ? `${recipe.calories} 千卡/份` : "待估算"}</strong></div>
       </div>
       <div class="detail-columns">
         <section><h3 class="section-title">食材清单</h3><ul class="ingredient-list">${recipe.ingredients.map(([name, amount]) => `<li><span>${name}</span><strong>${amount}</strong></li>`).join("")}</ul></section>
@@ -247,7 +249,6 @@ function renderCook() {
       <main class="cook-main">
         <span class="step-count">步骤 ${state.cookStep + 1}</span>
         <div class="cook-step">${step.text}</div>
-        <div class="step-ingredients"><span>本步骤用料</span><strong>${step.items || "按需使用"}</strong></div>
         ${step.timer ? `<div class="timer-panel"><div class="timer" id="timerText">${formatTime(state.seconds || step.timer)}</div><button class="button secondary" data-timer="${step.timer}">${state.timerId ? "暂停" : "开始计时"}</button><button class="button secondary" data-reset-timer="${step.timer}">重置</button></div>` : ""}
       </main>
       <footer class="cook-controls">
@@ -365,6 +366,7 @@ function validateBackup(value) {
       title: String(recipe.title).trim(),
       image,
       time: Math.max(1, Number(recipe.time) || 30),
+      calories: Math.max(0, Number(recipe.calories) || 0),
       difficulty: ["简单", "中等", "较难"].includes(recipe.difficulty) ? recipe.difficulty : "简单",
       servings: Math.max(1, Number(recipe.servings) || 2),
       favorite: Boolean(recipe.favorite),
@@ -453,6 +455,7 @@ function openRecipeEditor(id) {
   prepareRecipeForm("edit", recipe);
   organizeForm.elements.title.value = recipe.title;
   organizeForm.elements.time.value = recipe.time;
+  organizeForm.elements.calories.value = recipe.calories || "";
   organizeForm.elements.servings.value = recipe.servings;
   organizeForm.elements.difficulty.value = recipe.difficulty;
   organizeForm.elements.tags.value = recipe.tags.join(", ");
@@ -481,6 +484,7 @@ function setRecognizeStatus(message, type = "") {
 function fillRecipeDraft(draft) {
   if (draft.title) organizeForm.elements.title.value = draft.title;
   if (draft.time) organizeForm.elements.time.value = draft.time;
+  if (draft.calories) organizeForm.elements.calories.value = draft.calories;
   if (draft.servings) organizeForm.elements.servings.value = draft.servings;
   if (draft.difficulty) organizeForm.elements.difficulty.value = draft.difficulty;
   organizeForm.elements.tags.value = (draft.tags || []).join(", ");
@@ -800,6 +804,7 @@ organizeForm.addEventListener("submit", event => {
     title: form.get("title").trim(),
     image: form.get("cover") || DEFAULT_COVER,
     time: Number(form.get("time")),
+    calories: Math.max(0, Number(form.get("calories")) || 0),
     difficulty: form.get("difficulty"),
     servings: Number(form.get("servings")),
     tags: form.get("tags").split(/[,，]/).map(tag => tag.trim()).filter(Boolean),
