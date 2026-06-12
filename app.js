@@ -88,7 +88,9 @@ const state = {
   cookMode: "single",
   cookStep: 0,
   activeTimers: [],
-  timerTickerId: null
+  timerTickerId: null,
+  cookSession: loadStoredValue("zaobian-cook-session", null),
+  lastBackupAt: localStorage.getItem("zaobian-last-backup") || ""
 };
 
 const viewRoot = document.querySelector("#viewRoot");
@@ -114,14 +116,48 @@ function save() {
   localStorage.setItem("zaobian-together-plan", JSON.stringify(state.togetherPlan));
   document.querySelector("#inboxCount").textContent = state.inbox.length;
   document.querySelector("#togetherCount").textContent = state.togetherRecipeIds.length;
+  renderBackupStatus();
 }
 
-function toast(message) {
+function toast(message, actionLabel = "", action = null) {
   const el = document.querySelector("#toast");
-  el.textContent = message;
+  const text = document.querySelector("#toastText");
+  const button = document.querySelector("#toastAction");
+  text.textContent = message;
+  button.hidden = !actionLabel;
+  button.textContent = actionLabel;
+  button.onclick = actionLabel ? () => {
+    action?.();
+    el.classList.remove("show");
+  } : null;
   el.classList.add("show");
   clearTimeout(toast.id);
-  toast.id = setTimeout(() => el.classList.remove("show"), 2200);
+  toast.id = setTimeout(() => el.classList.remove("show"), actionLabel ? 5000 : 2200);
+}
+
+function renderBackupStatus() {
+  const status = document.querySelector("#backupStatus");
+  if (!status) return;
+  status.textContent = state.lastBackupAt
+    ? `上次导出：${new Date(state.lastBackupAt).toLocaleDateString("zh-CN")}`
+    : "尚未导出备份，建议定期保存";
+}
+
+function renderResumeCard() {
+  const session = state.cookSession;
+  if (!session) return "";
+  const recipe = state.recipes.find(item => item.id === Number(session.recipeId));
+  const title = session.mode === "together" ? "一起做计划" : recipe?.title;
+  if (!title) return "";
+  return `
+    <div class="resume-card">
+      <div><strong>继续上次做菜：${escapeHtml(title)}</strong><span>停在第 ${Number(session.cookStep) + 1} 步，计时器会按实际时间恢复。</span></div>
+      <div class="head-actions">
+        <button class="button secondary small" data-discard-cook-session>放弃</button>
+        <button class="button primary small" data-resume-cook>继续做菜</button>
+      </div>
+    </div>
+  `;
 }
 
 function filteredRecipes() {
@@ -140,6 +176,7 @@ function renderLibrary() {
   const recipes = filteredRecipes();
   const favoriteMode = state.view === "favorites";
   viewRoot.innerHTML = `
+    ${renderResumeCard()}
     <div class="view-head">
       <div>
         <span class="eyebrow">${favoriteMode ? "常做清单" : "个人菜谱库"}</span>
@@ -183,6 +220,7 @@ function recipeCard(recipe) {
 
 function renderInbox() {
   viewRoot.innerHTML = `
+    ${renderResumeCard()}
     <div class="view-head">
       <div>
         <span class="eyebrow">稍后整理</span>
@@ -219,6 +257,7 @@ function renderTogether() {
     .filter(Boolean);
   const plan = isTogetherPlan(state.togetherPlan) ? state.togetherPlan : null;
   viewRoot.innerHTML = `
+    ${renderResumeCard()}
     <div class="view-head">
       <div>
         <span class="eyebrow">多菜协同</span>
@@ -243,7 +282,7 @@ function renderTogether() {
             <article class="together-card">
               <img src="${recipe.image}" alt="">
               <span><strong>${escapeHtml(recipe.title)}</strong><small>${recipe.time} 分钟 · ${recipe.servings} 人份</small></span>
-              <b>✓</b>
+              <button class="icon-button together-remove" data-toggle-together="${recipe.id}" aria-label="从一起做移除">×</button>
             </article>
           `).join("")}
         </div>
@@ -323,6 +362,9 @@ function renderTogetherPlan(plan) {
 
 function render() {
   document.querySelectorAll("[data-nav]").forEach(el => el.classList.toggle("active", el.dataset.nav === state.view));
+  searchInput.placeholder = state.view === "inbox"
+    ? "搜索会自动返回菜谱库"
+    : state.view === "together" ? "搜索菜谱并添加到一起做" : "搜索菜名、食材或标签";
   if (state.view === "inbox") renderInbox();
   else if (state.view === "together") renderTogether();
   else renderLibrary();
@@ -374,6 +416,7 @@ function openCook(id) {
   state.cookMode = "single";
   state.cookStep = 0;
   clearCookingTimers();
+  persistCookingSession();
   recipeDialog.close();
   renderCook();
   cookDialog.showModal();
@@ -388,6 +431,7 @@ function openTogetherCook() {
   state.activeRecipe = null;
   state.cookStep = 0;
   clearCookingTimers();
+  persistCookingSession();
   renderCook();
   cookDialog.showModal();
 }
@@ -406,6 +450,7 @@ function renderCook() {
     : getStepTimerSeconds(step);
   const timerKey = `${togetherMode ? "together" : recipe.id}-${state.cookStep}`;
   const timerExists = state.activeTimers.some(timer => timer.key === timerKey);
+  const timelineContext = togetherMode ? renderTimelineContext(steps) : "";
   document.querySelector("#cookView").innerHTML = `
     <div class="cook-shell">
       <div>
@@ -413,6 +458,12 @@ function renderCook() {
         <div class="cook-progress"><span style="width:${(state.cookStep + 1) / steps.length * 100}%"></span></div>
       </div>
       <main class="cook-main">
+        <div class="cook-session-tools">
+          ${"Notification" in window && Notification.permission !== "granted"
+            ? `<button class="button secondary small" data-enable-notifications>开启后台提醒</button>`
+            : ""}
+        </div>
+        ${timelineContext}
         <span class="step-count">${escapeHtml(stepTitle)}</span>
         <div class="cook-step">${escapeHtml(stepText)}</div>
         ${togetherMode && step.parallelNote ? `<p class="cook-note">${escapeHtml(step.parallelNote)}</p>` : ""}
@@ -431,6 +482,19 @@ function renderCook() {
         <button class="button primary" data-cook-next>${isLast ? (togetherMode ? "完成全部菜 ✓" : "完成这道菜 ✓") : "下一步 →"}</button>
       </footer>
     </div>`;
+}
+
+function renderTimelineContext(steps) {
+  const previous = steps[state.cookStep - 1];
+  const current = steps[state.cookStep];
+  const next = steps[state.cookStep + 1];
+  return `
+    <section class="timeline-context">
+      <article><span>刚刚完成</span><strong>${previous ? `${escapeHtml(previous.recipe)}：${escapeHtml(previous.action)}` : "准备开始"}</strong></article>
+      <article class="current"><span>现在进行</span><strong>${escapeHtml(current.recipe)}：${escapeHtml(current.action)}</strong></article>
+      <article><span>下一项</span><strong>${next ? `${escapeHtml(next.recipe)}：${escapeHtml(next.action)}` : "完成全部菜"}</strong></article>
+    </section>
+  `;
 }
 
 function getStepTimerSeconds(step) {
@@ -480,8 +544,7 @@ function finishCooking() {
     state.activeRecipe.cooked += 1;
     toast(`已记录：完成 ${state.activeRecipe.title}`);
   }
-  document.querySelector("#weekCount").textContent = Number(document.querySelector("#weekCount").textContent) + 1;
-  clearCookingTimers();
+  clearCookingSession();
   cookDialog.close();
   save();
   render();
@@ -521,6 +584,9 @@ function exportBackup() {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+  state.lastBackupAt = new Date().toISOString();
+  localStorage.setItem("zaobian-last-backup", state.lastBackupAt);
+  renderBackupStatus();
   toast(`已导出 ${state.recipes.length} 道菜谱`);
 }
 
@@ -628,6 +694,9 @@ async function importBackup(file) {
   const previousInbox = state.inbox;
   state.recipes = backup.recipes;
   state.inbox = backup.inbox;
+  state.togetherRecipeIds = [];
+  state.togetherPlan = null;
+  clearCookingSession();
   state.view = "library";
   state.filter = "全部";
   state.query = "";
@@ -676,7 +745,9 @@ function openRecipeEditor(id) {
   organizeForm.elements.ingredients.value = recipe.ingredients
     .map(([name, amount]) => `${name} | ${amount}`)
     .join("\n");
-  organizeForm.elements.steps.value = recipe.steps.map(step => step.text).join("\n");
+  organizeForm.elements.steps.value = recipe.steps
+    .map(step => `${step.text}${Number(step.timer) > 0 ? ` | ${step.timer}` : ""}`)
+    .join("\n");
   organizeForm.elements.note.value = recipe.note === "暂无个人调整。" ? "" : recipe.note;
   recipeDialog.close();
   organizeDialog.showModal();
@@ -706,7 +777,7 @@ function fillRecipeDraft(draft) {
     .map(item => `${item.name} | ${item.amount || "适量"}`)
     .join("\n");
   organizeForm.elements.steps.value = (draft.steps || [])
-    .map(step => step.text)
+    .map(step => `${step.text}${Number(step.timer) > 0 ? ` | ${step.timer}` : ""}`)
     .join("\n");
   organizeForm.elements.note.value = draft.note || "";
 }
@@ -785,7 +856,15 @@ function parseSteps(value) {
   return value.split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean)
-    .map(text => ({ text, items: "" }));
+    .map(line => {
+      const [text, timerText = ""] = line.split(/\s*\|\s*(?=\d+\s*$)/);
+      const timer = Math.max(0, Number(timerText) || 0);
+      return {
+        text: text.trim(),
+        items: "",
+        ...(timer > 0 ? { timer } : {})
+      };
+    });
 }
 
 async function generateTogetherPlan() {
@@ -801,6 +880,7 @@ async function generateTogetherPlan() {
     return;
   }
 
+  if (state.cookSession?.mode === "together") clearCookingSession();
   state.togetherLoading = true;
   render();
   try {
@@ -937,6 +1017,7 @@ function buildLocalTogetherPlan(recipes) {
 }
 
 function toggleTogetherRecipe(id) {
+  if (state.cookSession?.mode === "together") clearCookingSession();
   if (state.togetherRecipeIds.includes(id)) {
     state.togetherRecipeIds = state.togetherRecipeIds.filter(recipeId => recipeId !== id);
     toast("已从一起做移除");
@@ -953,6 +1034,19 @@ function toggleTogetherRecipe(id) {
 }
 
 document.addEventListener("click", event => {
+  if (event.target.closest("[data-resume-cook]")) {
+    resumeCookingSession();
+    return;
+  }
+  if (event.target.closest("[data-discard-cook-session]")) {
+    clearCookingSession();
+    render();
+    return;
+  }
+  if (event.target.closest("[data-enable-notifications]")) {
+    enableCookingNotifications();
+    return;
+  }
   if (event.target.closest("[data-export-backup]")) {
     exportBackup();
     return;
@@ -1026,19 +1120,28 @@ document.addEventListener("click", event => {
   const start = event.target.closest("[data-start-cook]");
   if (start) openCook(start.dataset.startCook);
   if (event.target.closest("[data-close-cook]")) {
-    clearCookingTimers();
+    persistCookingSession();
     cookDialog.close();
+    render();
   }
   const organize = event.target.closest("[data-organize]");
   if (organize) openOrganizer(organize.dataset.organize);
   const del = event.target.closest("[data-delete-inbox]");
   if (del) {
     const id = Number(del.dataset.deleteInbox);
-    state.inbox = state.inbox.filter(entry => entry.id !== id);
+    const index = state.inbox.findIndex(entry => entry.id === id);
+    const [removed] = index >= 0 ? state.inbox.splice(index, 1) : [];
     render();
+    if (removed) {
+      toast("已删除待整理教程", "撤销", () => {
+        state.inbox.splice(Math.max(0, index), 0, removed);
+        render();
+      });
+    }
   }
   if (event.target.closest("[data-cook-prev]") && state.cookStep > 0) {
     state.cookStep--;
+    persistCookingSession();
     renderCook();
   }
   if (event.target.closest("[data-cook-next]")) {
@@ -1047,6 +1150,7 @@ document.addEventListener("click", event => {
       : state.activeRecipe.steps.length;
     if (state.cookStep < stepCount - 1) {
       state.cookStep++;
+      persistCookingSession();
       renderCook();
     }
     else finishCooking();
@@ -1072,6 +1176,79 @@ document.addEventListener("keydown", event => {
   }
 });
 
+function persistCookingSession() {
+  const recipeId = state.cookMode === "single" ? state.activeRecipe?.id : null;
+  if (state.cookMode === "single" && !recipeId) return;
+  const now = Date.now();
+  state.cookSession = {
+    mode: state.cookMode,
+    recipeId,
+    cookStep: state.cookStep,
+    activeTimers: state.activeTimers.map(timer => ({
+      ...timer,
+      remaining: timer.running && timer.endsAt
+        ? Math.max(0, Math.ceil((timer.endsAt - now) / 1000))
+        : timer.remaining
+    }))
+  };
+  localStorage.setItem("zaobian-cook-session", JSON.stringify(state.cookSession));
+}
+
+function resumeCookingSession() {
+  const session = state.cookSession;
+  if (!session) return;
+  if (session.mode === "together" && !isTogetherPlan(state.togetherPlan)) {
+    clearCookingSession();
+    toast("原一起做计划已失效，请重新生成");
+    render();
+    return;
+  }
+  const recipe = session.mode === "single"
+    ? state.recipes.find(item => item.id === Number(session.recipeId))
+    : null;
+  if (session.mode === "single" && !recipe) {
+    clearCookingSession();
+    render();
+    return;
+  }
+
+  state.cookMode = session.mode;
+  state.activeRecipe = recipe;
+  const steps = session.mode === "together" ? state.togetherPlan.timeline : recipe.steps;
+  state.cookStep = Math.min(Math.max(0, Number(session.cookStep) || 0), steps.length - 1);
+  const now = Date.now();
+  state.activeTimers = (session.activeTimers || []).map(timer => {
+    const remaining = timer.running && timer.endsAt
+      ? Math.max(0, Math.ceil((timer.endsAt - now) / 1000))
+      : Math.max(0, Number(timer.remaining) || 0);
+    return {
+      ...timer,
+      remaining,
+      running: Boolean(timer.running && remaining > 0),
+      endsAt: timer.running && remaining > 0 ? Number(timer.endsAt) : null
+    };
+  });
+  ensureTimerTicker();
+  renderCook();
+  cookDialog.showModal();
+}
+
+function clearCookingSession() {
+  clearCookingTimers();
+  state.cookSession = null;
+  localStorage.removeItem("zaobian-cook-session");
+}
+
+async function enableCookingNotifications() {
+  if (!("Notification" in window)) {
+    toast("当前浏览器不支持系统通知");
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  toast(permission === "granted" ? "后台计时提醒已开启" : "未获得通知权限");
+  renderCook();
+}
+
 function addCookingTimer(key, label, seconds) {
   if (!seconds || state.activeTimers.some(timer => timer.key === key)) return;
   prepareTimerAudio();
@@ -1085,6 +1262,7 @@ function addCookingTimer(key, label, seconds) {
     endsAt: Date.now() + seconds * 1000
   });
   ensureTimerTicker();
+  persistCookingSession();
   renderCook();
 }
 
@@ -1101,6 +1279,7 @@ function toggleCookingTimer(id) {
     timer.endsAt = Date.now() + timer.remaining * 1000;
   }
   ensureTimerTicker();
+  persistCookingSession();
   renderCook();
 }
 
@@ -1110,12 +1289,14 @@ function resetCookingTimer(id) {
   timer.remaining = timer.total;
   timer.running = false;
   timer.endsAt = null;
+  persistCookingSession();
   renderCook();
 }
 
 function removeCookingTimer(id) {
   state.activeTimers = state.activeTimers.filter(timer => timer.id !== id);
   stopTimerTickerIfIdle();
+  persistCookingSession();
   renderCook();
 }
 
@@ -1139,7 +1320,9 @@ function ensureTimerTicker() {
     });
     if (completed) {
       playTimerAlarm();
+      showTimerNotification();
       toast("计时结束，请检查对应菜品");
+      persistCookingSession();
       renderCook();
     }
     stopTimerTickerIfIdle();
@@ -1156,6 +1339,16 @@ function clearCookingTimers() {
   clearInterval(state.timerTickerId);
   state.timerTickerId = null;
   state.activeTimers = [];
+}
+
+function showTimerNotification() {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    new Notification("灶边计时结束", {
+      body: "请返回查看对应菜品步骤。",
+      tag: "zaobian-timer"
+    });
+  } catch {}
 }
 
 function prepareTimerAudio() {
@@ -1293,6 +1486,7 @@ document.querySelector("#importForm").addEventListener("submit", event => {
     return;
   }
   const title = form.get("title")?.trim() || "未命名教程";
+  const organizeNow = form.get("organizeNow") === "on";
   const id = Date.now();
   state.inbox.unshift({
     id,
@@ -1306,6 +1500,7 @@ document.querySelector("#importForm").addEventListener("submit", event => {
   state.view = "inbox";
   render();
   toast("教程已收进待整理箱");
+  if (organizeNow) openOrganizer(id);
 });
 
 organizeForm.addEventListener("submit", event => {
@@ -1350,7 +1545,11 @@ organizeForm.addEventListener("submit", event => {
   openRecipe(recipe.id);
 });
 
-searchInput.addEventListener("input", event => { state.query = event.target.value; if (state.view === "inbox") state.view = "library"; render(); });
+searchInput.addEventListener("input", event => {
+  state.query = event.target.value;
+  if (state.view === "inbox" || state.view === "together") state.view = "library";
+  render();
+});
 document.addEventListener("keydown", event => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); searchInput.focus(); }
   if (event.key === "Escape") document.querySelector(".sidebar").classList.remove("open");
@@ -1363,6 +1562,12 @@ organizeDialog.addEventListener("click", event => {
     recognizeRequestId++;
     organizeDialog.close();
   }
+});
+cookDialog.addEventListener("cancel", event => {
+  event.preventDefault();
+  persistCookingSession();
+  cookDialog.close();
+  render();
 });
 
 render();
