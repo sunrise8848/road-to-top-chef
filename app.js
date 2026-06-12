@@ -283,6 +283,7 @@ function renderTogetherPlan(plan) {
       <div class="plan-summary">
         <div><span>计划菜品</span><strong>${plan.recipeTitles.map(escapeHtml).join("、")}</strong></div>
         <div><span>预计总用时</span><strong>约 ${plan.totalTime} 分钟</strong></div>
+        <div><span>调度目标</span><strong>尽量同时出锅</strong></div>
         <div class="plan-actions">
           <button class="button secondary small" data-generate-together>重新规划</button>
           <button class="button primary small" data-start-together>开始一起做</button>
@@ -877,36 +878,61 @@ function buildLocalTogetherPlan(recipes) {
     prep: "统一清洗、切配后按菜分装"
   }));
 
-  let minute = Math.max(5, recipes.length * 3);
+  const prepMinutes = Math.max(5, recipes.length * 3);
   const timeline = [{
     startMinute: 0,
-    duration: minute,
+    duration: prepMinutes,
     recipe: "通用备料",
     action: "清洗并切配全部食材，按菜分装调味料",
     type: "active",
     parallelNote: ""
   }];
-  [...recipes].sort((a, b) => b.time - a.time).forEach(recipe => {
-    recipe.steps.forEach(step => {
+
+  const recipeSchedules = recipes.map(recipe => {
+    const steps = recipe.steps.map(step => {
       const waitMinutes = Math.max(0, Math.round((Number(step.timer) || 0) / 60));
-      const duration = waitMinutes || 3;
+      return {
+        step,
+        waitMinutes,
+        duration: waitMinutes || 3
+      };
+    });
+    return {
+      recipe,
+      steps,
+      duration: steps.reduce((total, item) => total + item.duration, 0)
+    };
+  });
+  const cookingMinutes = Math.max(...recipeSchedules.map(schedule => schedule.duration));
+  const targetFinish = prepMinutes + cookingMinutes;
+
+  recipeSchedules.forEach(schedule => {
+    let minute = targetFinish - schedule.duration;
+    const { recipe } = schedule;
+    schedule.steps.forEach(({ step, waitMinutes, duration }, index) => {
       timeline.push({
         startMinute: minute,
         duration,
         recipe: recipe.title,
         action: step.text,
         type: waitMinutes >= 3 ? "wait" : "active",
-        parallelNote: waitMinutes >= 3 ? "等待期间可准备下一道菜" : ""
+        parallelNote: index === schedule.steps.length - 1
+          ? `预计第 ${targetFinish} 分钟出锅`
+          : waitMinutes >= 3 ? "等待期间穿插其他菜步骤" : ""
       });
       minute += duration;
     });
   });
+  timeline.sort((a, b) => a.startMinute - b.startMinute || (a.type === "wait" ? 1 : -1));
   return {
     recipeTitles: recipes.map(recipe => recipe.title),
-    totalTime: minute,
+    totalTime: targetFinish,
     prep,
     timeline,
-    tips: ["这是离线基础计划；网络恢复后可点击“重新规划”获得更合理的并行安排。"]
+    tips: [
+      `各道菜按第 ${targetFinish} 分钟同步出锅倒排，请根据实际火力前后微调 1–3 分钟。`,
+      "这是离线基础计划；网络恢复后可点击“重新规划”获得更合理的灶眼与主动操作安排。"
+    ]
   };
 }
 

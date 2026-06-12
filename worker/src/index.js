@@ -181,11 +181,15 @@ function buildTogetherPrompt() {
     "默认只有一个人操作，普通家庭厨房有两个灶眼；不要安排同一人在同一时间执行两项都需要持续翻炒、切配或看火的主动操作。",
     "先统一备料：prep 必须覆盖每道菜的全部食材和调味料，不能省略盐、油、糖等常用配料。",
     "相同食材必须合并成一项；能可靠相加相同单位时给出合计，单位不同或包含“适量”时在 totalAmount 中按菜名保留分项说明，不要强行换算。",
-    "再安排时间线：优先启动腌制、炖、蒸、焖、烤、烧水等耗时或等待步骤，在等待期间穿插其他菜的切配和快炒。",
-    "保证每道菜内部步骤顺序正确，并尽量让所有菜接近同时出锅；易凉或需要保持脆嫩的菜尽量靠后完成。",
+    "时间线的首要目标是让所有菜尽量同时出锅，而不只是缩短总时长。先确定共同出锅时间，再从每道菜最后一步向前倒排。",
+    "除必须静置、冷却或提前腌制的情况外，各道菜最后一个烹饪步骤的完成时间差应控制在 5 分钟以内，理想目标是 0–3 分钟。",
+    "优先启动腌制、炖、蒸、焖、烤、烧水等耗时或等待步骤，在等待期间穿插其他菜的切配和快炒；不要因为有空闲就过早完成某道菜。",
+    "易凉、容易回软、需要保持脆嫩或必须趁热吃的菜安排在最后阶段完成；可保温的炖菜可以略早，但应在 tips 中说明保温方式。",
+    "保证每道菜内部步骤顺序正确。timeline 必须包含每道菜的最后出锅步骤，不得在其他菜仍需长时间烹饪时提前完成快手菜。",
     "不要在同一个 active 项目中声称一个人同时焯水、切配或翻炒；等待可以与主动操作重叠，但主动操作应按真实先后拆开。",
     "timeline 的 startMinute 和 duration 均为整数分钟；不足 1 分钟的操作按 1 分钟计。type 只能是 active 或 wait。",
-    'JSON 格式：{"recipeTitles":["菜1","菜2"],"totalTime":40,"prep":[{"name":"蒜","totalAmount":"6瓣","usedIn":["菜1","菜2"],"prep":"统一切末，分成两份"}],"timeline":[{"startMinute":0,"duration":5,"recipe":"通用备料","action":"清洗并切配全部蔬菜","type":"active","parallelNote":""},{"startMinute":5,"duration":20,"recipe":"菜1","action":"小火炖煮","type":"wait","parallelNote":"期间制作菜2"}],"tips":["快炒菜最后出锅"]}'
+    "tips 第一项必须说明预计各菜出锅时间或完成时间差，并明确本计划以同步出锅为目标。",
+    'JSON 格式：{"recipeTitles":["菜1","菜2"],"totalTime":40,"prep":[{"name":"蒜","totalAmount":"6瓣","usedIn":["菜1","菜2"],"prep":"统一切末，分成两份"}],"timeline":[{"startMinute":0,"duration":5,"recipe":"通用备料","action":"清洗并切配全部蔬菜","type":"active","parallelNote":""},{"startMinute":5,"duration":30,"recipe":"菜1","action":"小火炖煮","type":"wait","parallelNote":"等待期间制作菜2"},{"startMinute":32,"duration":5,"recipe":"菜2","action":"大火快炒并出锅","type":"active","parallelNote":"出锅后短暂保温"},{"startMinute":37,"duration":3,"recipe":"菜1","action":"大火收汁并出锅","type":"active","parallelNote":"菜2已完成，立即收汁"}],"tips":["菜2预计第37分钟、菜1预计第40分钟出锅，完成时间差3分钟"]}'
   ].join("\n");
 }
 

@@ -142,7 +142,7 @@ h1 { margin-bottom: 7px; font-size: clamp(28px, 4vw, 42px); line-height: 1.12; }
 .together-empty { margin-top: 22px; }
 .together-empty .button { margin-top: 18px; }
 .together-plan { display: grid; gap: 20px; }
-.plan-summary { padding: 18px 20px; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 24px; border-radius: 8px; color: white; background: var(--green-dark); }
+.plan-summary { padding: 18px 20px; display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 24px; border-radius: 8px; color: white; background: var(--green-dark); }
 .plan-summary span, .plan-summary strong { display: block; }
 .plan-summary span { margin-bottom: 4px; color: #bbcec3; font-size: 11px; }
 .plan-actions { display: flex; gap: 8px; }
