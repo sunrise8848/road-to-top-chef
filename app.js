@@ -699,43 +699,111 @@ async function generateTogetherPlan() {
   state.togetherLoading = true;
   render();
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000);
-    let response;
-    try {
-      response = await fetch(recipeApiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          action: "plan_together",
-          recipes: recipes.map(recipe => ({
-            title: recipe.title,
-            time: recipe.time,
-            servings: recipe.servings,
-            ingredients: recipe.ingredients.map(([name, amount]) => ({ name, amount })),
-            steps: recipe.steps.map(step => ({
-              text: step.text,
-              timer: Number(step.timer) || 0
-            })),
-            note: recipe.note
-          }))
-        })
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const requestBody = {
+      action: "plan_together",
+      recipes: recipes.map(recipe => ({
+        title: recipe.title,
+        time: recipe.time,
+        servings: recipe.servings,
+        ingredients: recipe.ingredients.map(([name, amount]) => ({ name, amount })),
+        steps: recipe.steps.map(step => ({
+          text: step.text,
+          timer: Number(step.timer) || 0
+        })),
+        note: recipe.note
+      }))
+    };
+    const response = await fetchWithRetry(recipeApiUrl, requestBody);
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "AI 暂时无法生成计划");
     state.togetherPlan = result.plan;
     save();
   } catch (error) {
-    const message = error.name === "AbortError" ? "规划超过 120 秒，请稍后重试" : error.message;
-    toast(message);
+    if (error.name === "TypeError" || error.name === "AbortError") {
+      state.togetherPlan = buildLocalTogetherPlan(recipes);
+      save();
+      toast("未连接到 AI，已生成基础烹饪计划");
+    } else {
+      toast(error.message);
+    }
   } finally {
     state.togetherLoading = false;
     render();
   }
+}
+
+async function fetchWithRetry(url, body, attempts = 2) {
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    try {
+      return await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify(body)
+      });
+    } catch (error) {
+      lastError = error;
+      if (error.name !== "TypeError" || attempt === attempts - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1200));
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+  throw lastError;
+}
+
+function buildLocalTogetherPlan(recipes) {
+  const ingredientGroups = new Map();
+  recipes.forEach(recipe => {
+    recipe.ingredients.forEach(([name, amount]) => {
+      const key = name.replace(/\s+/g, "").toLowerCase();
+      if (!ingredientGroups.has(key)) ingredientGroups.set(key, { name, entries: [] });
+      ingredientGroups.get(key).entries.push({ recipe: recipe.title, amount });
+    });
+  });
+  const prep = [...ingredientGroups.values()].map(group => ({
+    name: group.name,
+    totalAmount: group.entries.length === 1
+      ? group.entries[0].amount
+      : group.entries.map(entry => `${entry.recipe} ${entry.amount}`).join("；"),
+    usedIn: group.entries.map(entry => entry.recipe),
+    prep: "统一清洗、切配后按菜分装"
+  }));
+
+  let minute = Math.max(5, recipes.length * 3);
+  const timeline = [{
+    startMinute: 0,
+    duration: minute,
+    recipe: "通用备料",
+    action: "清洗并切配全部食材，按菜分装调味料",
+    type: "active",
+    parallelNote: ""
+  }];
+  [...recipes].sort((a, b) => b.time - a.time).forEach(recipe => {
+    recipe.steps.forEach(step => {
+      const waitMinutes = Math.max(0, Math.round((Number(step.timer) || 0) / 60));
+      const duration = waitMinutes || 3;
+      timeline.push({
+        startMinute: minute,
+        duration,
+        recipe: recipe.title,
+        action: step.text,
+        type: waitMinutes >= 3 ? "wait" : "active",
+        parallelNote: waitMinutes >= 3 ? "等待期间可准备下一道菜" : ""
+      });
+      minute += duration;
+    });
+  });
+  return {
+    recipeTitles: recipes.map(recipe => recipe.title),
+    totalTime: minute,
+    prep,
+    timeline,
+    tips: ["这是离线基础计划；网络恢复后可点击“重新规划”获得更合理的并行安排。"]
+  };
 }
 
 document.addEventListener("click", event => {
