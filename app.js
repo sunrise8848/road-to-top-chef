@@ -105,6 +105,7 @@ const MAX_COVER_EDGE = 1200;
 const MAX_COVER_BYTES = 450 * 1024;
 const BACKUP_VERSION = 1;
 const MAX_BACKUP_BYTES = 25 * 1024 * 1024;
+let timerAudioContext = null;
 
 function save() {
   localStorage.setItem("zaobian-recipes", JSON.stringify(state.recipes));
@@ -1047,6 +1048,7 @@ document.addEventListener("keydown", event => {
 
 function addCookingTimer(key, label, seconds) {
   if (!seconds || state.activeTimers.some(timer => timer.key === key)) return;
+  prepareTimerAudio();
   state.activeTimers.push({
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     key,
@@ -1068,6 +1070,7 @@ function toggleCookingTimer(id) {
     timer.running = false;
     timer.endsAt = null;
   } else {
+    prepareTimerAudio();
     timer.running = true;
     timer.endsAt = Date.now() + timer.remaining * 1000;
   }
@@ -1109,6 +1112,7 @@ function ensureTimerTicker() {
       if (display) display.textContent = formatTime(timer.remaining);
     });
     if (completed) {
+      playTimerAlarm();
       toast("计时结束，请检查对应菜品");
       renderCook();
     }
@@ -1126,6 +1130,45 @@ function clearCookingTimers() {
   clearInterval(state.timerTickerId);
   state.timerTickerId = null;
   state.activeTimers = [];
+}
+
+function prepareTimerAudio() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!timerAudioContext) timerAudioContext = new AudioContextClass();
+  if (timerAudioContext.state === "suspended") {
+    timerAudioContext.resume().catch(() => {});
+  }
+  return timerAudioContext;
+}
+
+function playTimerAlarm() {
+  const audioContext = prepareTimerAudio();
+  if (!audioContext) return;
+
+  const play = () => {
+    const start = audioContext.currentTime;
+    [0, 0.32, 0.64].forEach((delay, index) => {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = index === 2 ? 1046 : 880;
+      gain.gain.setValueAtTime(0.0001, start + delay);
+      gain.gain.exponentialRampToValueAtTime(0.22, start + delay + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + delay + 0.22);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(start + delay);
+      oscillator.stop(start + delay + 0.24);
+    });
+    navigator.vibrate?.([180, 100, 180, 100, 260]);
+  };
+
+  if (audioContext.state === "suspended") {
+    audioContext.resume().then(play).catch(() => {});
+  } else {
+    play();
+  }
 }
 
 function setImportStatus(message, type = "") {
