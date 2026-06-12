@@ -447,7 +447,7 @@ function renderCook() {
   const stepTitle = togetherMode ? step.recipe : `步骤 ${state.cookStep + 1}`;
   const stepText = togetherMode ? step.action : step.text;
   const timerSeconds = togetherMode
-    ? Math.max(0, Number(step.duration) * 60)
+    ? (step.type === "wait" ? Math.max(0, Number(step.duration) * 60) : 0)
     : getStepTimerSeconds(step);
   const timerKey = `${togetherMode ? "together" : recipe.id}-${state.cookStep}`;
   const timerExists = state.activeTimers.some(timer => timer.key === timerKey);

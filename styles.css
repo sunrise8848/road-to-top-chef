@@ -286,9 +286,10 @@ dialog::backdrop { background: rgba(16, 25, 20, .55); backdrop-filter: blur(3px)
   .detail-content { padding: 22px 18px; }
   .detail-stats { grid-template-columns: repeat(2,1fr); }
   .detail-footer { padding: 12px 18px; }
-  .detail-footer, .detail-footer > div { flex-wrap: wrap; }
-  .detail-footer > div { flex: 1 1 100%; }
-  .detail-footer .button { flex: 1; }
+  .detail-footer { align-items: stretch; flex-direction: column; }
+  .detail-footer > div { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .detail-footer .button { width: 100%; min-width: 0; padding: 0 9px; white-space: nowrap; font-size: 12px; }
+  .detail-footer > .button { min-height: 48px; font-size: 15px; }
   .cook-head { padding: 15px 18px; }
   .cook-main { padding: 30px 20px; }
   .timeline-context { grid-template-columns: 1fr; }
