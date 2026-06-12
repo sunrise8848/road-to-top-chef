@@ -403,6 +403,7 @@ function openRecipe(id) {
         <button class="button secondary ${isTogether ? "together-added" : ""}" data-toggle-together="${recipe.id}" aria-pressed="${isTogether}">
           ${isTogether ? "✓ 已加入一起做" : "＋ 加入一起做"}
         </button>
+        <button class="button danger" data-delete-recipe="${recipe.id}">删除菜谱</button>
       </div>
       <button class="button primary" data-start-cook="${recipe.id}">开始做菜 →</button>
     </div>`;
@@ -752,6 +753,30 @@ function openRecipeEditor(id) {
   recipeDialog.close();
   organizeDialog.showModal();
   organizeForm.elements.title.focus();
+}
+
+function deleteRecipe(id) {
+  const index = state.recipes.findIndex(recipe => recipe.id === id);
+  if (index < 0) return;
+  const recipe = state.recipes[index];
+  const wasTogether = state.togetherRecipeIds.includes(id);
+  const previousTogetherPlan = state.togetherPlan;
+  if (!window.confirm(`确定删除“${recipe.title}”吗？\n\n删除后可在提示出现期间撤销。`)) return;
+
+  state.recipes.splice(index, 1);
+  state.togetherRecipeIds = state.togetherRecipeIds.filter(recipeId => recipeId !== id);
+  state.togetherPlan = null;
+  if (state.cookSession?.recipeId === id || state.cookSession?.mode === "together") {
+    clearCookingSession();
+  }
+  recipeDialog.close();
+  render();
+  toast(`已删除“${recipe.title}”`, "撤销", () => {
+    state.recipes.splice(Math.min(index, state.recipes.length), 0, recipe);
+    if (wasTogether) state.togetherRecipeIds.push(id);
+    state.togetherPlan = previousTogetherPlan;
+    render();
+  });
 }
 
 function setCover(image) {
@@ -1116,6 +1141,8 @@ document.addEventListener("click", event => {
   if (card) openRecipe(card.dataset.recipe);
   const editRecipe = event.target.closest("[data-edit-recipe]");
   if (editRecipe) openRecipeEditor(editRecipe.dataset.editRecipe);
+  const deleteRecipeButton = event.target.closest("[data-delete-recipe]");
+  if (deleteRecipeButton) deleteRecipe(Number(deleteRecipeButton.dataset.deleteRecipe));
   if (event.target.closest("[data-close-detail]")) recipeDialog.close();
   const start = event.target.closest("[data-start-cook]");
   if (start) openCook(start.dataset.startCook);
