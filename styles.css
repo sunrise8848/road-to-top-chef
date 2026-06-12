@@ -139,6 +139,7 @@ h1 { margin-bottom: 7px; font-size: clamp(28px, 4vw, 42px); line-height: 1.12; }
 .plan-summary { padding: 18px 20px; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 24px; border-radius: 8px; color: white; background: var(--green-dark); }
 .plan-summary span, .plan-summary strong { display: block; }
 .plan-summary span { margin-bottom: 4px; color: #bbcec3; font-size: 11px; }
+.plan-actions { display: flex; gap: 8px; }
 .plan-columns { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 18px; }
 .plan-panel { padding: 22px; border: 1px solid var(--line); border-radius: 8px; background: white; }
 .plan-panel h2 { margin-bottom: 18px; }
@@ -214,8 +215,19 @@ dialog::backdrop { background: rgba(16, 25, 20, .55); backdrop-filter: blur(3px)
 .cook-main { width: min(820px, 100%); margin: auto; padding: 40px 28px; }
 .step-count { color: var(--green); font-size: 13px; font-weight: 800; }
 .cook-step { margin: 18px 0 30px; font-size: clamp(26px, 5vw, 48px); line-height: 1.45; font-weight: 750; }
-.timer-panel { margin-top: 16px; display: flex; align-items: center; gap: 12px; }
-.timer { min-width: 96px; font-variant-numeric: tabular-nums; font-size: 28px; font-weight: 800; }
+.cook-note { margin: -15px 0 25px; padding: 12px 14px; border-left: 3px solid var(--yellow); color: #665b43; background: #fffaf0; }
+.step-timer-start { margin-bottom: 20px; padding: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+.step-timer-start span { color: var(--muted); font-size: 13px; font-weight: 700; }
+.active-timers { margin-top: 24px; display: grid; gap: 10px; }
+.active-timers-head { display: flex; justify-content: space-between; color: var(--green-dark); }
+.active-timers-head span { color: var(--muted); font-size: 12px; }
+.active-timer { padding: 14px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+.active-timer.finished { border-color: #e5c166; background: #fffaf0; }
+.active-timer > div:first-child { min-width: 0; }
+.active-timer > div:first-child strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.active-timer [data-timer-display] { display: block; margin-top: 5px; font-variant-numeric: tabular-nums; color: var(--green); font-size: 28px; font-weight: 800; }
+.active-timer.finished [data-timer-display] { color: #a16d00; }
+.timer-actions { display: flex; gap: 7px; }
 .cook-controls { padding: 18px 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px solid var(--line); background: white; }
 .cook-controls .button { min-height: 54px; font-size: 16px; }
 .toast { position: fixed; left: 50%; bottom: 28px; z-index: 100; padding: 11px 16px; border-radius: 6px; color: white; background: #1e2a23; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: .2s; }
@@ -246,6 +258,8 @@ dialog::backdrop { background: rgba(16, 25, 20, .55); backdrop-filter: blur(3px)
   .recipe-grid { grid-template-columns: 1fr; }
   .together-picker { grid-template-columns: 1fr; }
   .plan-summary { grid-template-columns: 1fr; gap: 14px; }
+  .plan-actions { width: 100%; }
+  .plan-actions .button { flex: 1; }
   .inbox-item { grid-template-columns: 46px 1fr; }
   .tutorial-mark { width: 46px; height: 46px; }
   .inbox-actions { grid-column: 1 / -1; }
@@ -259,5 +273,8 @@ dialog::backdrop { background: rgba(16, 25, 20, .55); backdrop-filter: blur(3px)
   .detail-footer .button { flex: 1; }
   .cook-head { padding: 15px 18px; }
   .cook-main { padding: 30px 20px; }
+  .step-timer-start { align-items: stretch; flex-direction: column; }
+  .active-timer { grid-template-columns: 1fr; }
+  .timer-actions .button { flex: 1; padding: 0 8px; }
   .cook-controls { padding: 12px; }
 }

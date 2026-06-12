@@ -85,9 +85,10 @@ const state = {
   filter: "全部",
   query: "",
   activeRecipe: null,
+  cookMode: "single",
   cookStep: 0,
-  timerId: null,
-  seconds: 0
+  activeTimers: [],
+  timerTickerId: null
 };
 
 const viewRoot = document.querySelector("#viewRoot");
@@ -257,7 +258,10 @@ function renderTogetherPlan(plan) {
       <div class="plan-summary">
         <div><span>计划菜品</span><strong>${plan.recipeTitles.map(escapeHtml).join("、")}</strong></div>
         <div><span>预计总用时</span><strong>约 ${plan.totalTime} 分钟</strong></div>
-        <button class="button secondary small" data-generate-together>重新规划</button>
+        <div class="plan-actions">
+          <button class="button secondary small" data-generate-together>重新规划</button>
+          <button class="button primary small" data-start-together>开始一起做</button>
+        </div>
       </div>
       <div class="plan-columns">
         <section class="plan-panel">
@@ -337,34 +341,98 @@ function openCook(id) {
   const recipe = state.recipes.find(item => item.id === Number(id));
   if (!recipe) return;
   state.activeRecipe = recipe;
+  state.cookMode = "single";
   state.cookStep = 0;
-  state.seconds = 0;
-  clearInterval(state.timerId);
+  clearCookingTimers();
   recipeDialog.close();
   renderCook();
   cookDialog.showModal();
 }
 
+function openTogetherCook() {
+  if (!isTogetherPlan(state.togetherPlan)) {
+    toast("请先生成一起做计划");
+    return;
+  }
+  state.cookMode = "together";
+  state.activeRecipe = null;
+  state.cookStep = 0;
+  clearCookingTimers();
+  renderCook();
+  cookDialog.showModal();
+}
+
 function renderCook() {
+  const togetherMode = state.cookMode === "together";
   const recipe = state.activeRecipe;
-  const step = recipe.steps[state.cookStep];
-  const isLast = state.cookStep === recipe.steps.length - 1;
+  const steps = togetherMode ? state.togetherPlan.timeline : recipe.steps;
+  const step = steps[state.cookStep];
+  const isLast = state.cookStep === steps.length - 1;
+  const title = togetherMode ? "一起做" : recipe.title;
+  const stepTitle = togetherMode ? step.recipe : `步骤 ${state.cookStep + 1}`;
+  const stepText = togetherMode ? step.action : step.text;
+  const timerSeconds = togetherMode
+    ? Math.max(0, Number(step.duration) * 60)
+    : getStepTimerSeconds(step);
+  const timerKey = `${togetherMode ? "together" : recipe.id}-${state.cookStep}`;
+  const timerExists = state.activeTimers.some(timer => timer.key === timerKey);
   document.querySelector("#cookView").innerHTML = `
     <div class="cook-shell">
       <div>
-        <header class="cook-head"><button class="icon-button" data-close-cook aria-label="退出做饭模式">×</button><strong>${recipe.title}</strong><span>${state.cookStep + 1}/${recipe.steps.length}</span></header>
-        <div class="cook-progress"><span style="width:${(state.cookStep + 1) / recipe.steps.length * 100}%"></span></div>
+        <header class="cook-head"><button class="icon-button" data-close-cook aria-label="退出做饭模式">×</button><strong>${title}</strong><span>${state.cookStep + 1}/${steps.length}</span></header>
+        <div class="cook-progress"><span style="width:${(state.cookStep + 1) / steps.length * 100}%"></span></div>
       </div>
       <main class="cook-main">
-        <span class="step-count">步骤 ${state.cookStep + 1}</span>
-        <div class="cook-step">${step.text}</div>
-        ${step.timer ? `<div class="timer-panel"><div class="timer" id="timerText">${formatTime(state.seconds || step.timer)}</div><button class="button secondary" data-timer="${step.timer}">${state.timerId ? "暂停" : "开始计时"}</button><button class="button secondary" data-reset-timer="${step.timer}">重置</button></div>` : ""}
+        <span class="step-count">${escapeHtml(stepTitle)}</span>
+        <div class="cook-step">${escapeHtml(stepText)}</div>
+        ${togetherMode && step.parallelNote ? `<p class="cook-note">${escapeHtml(step.parallelNote)}</p>` : ""}
+        ${timerSeconds ? `
+          <div class="step-timer-start">
+            <span>建议计时 ${formatTime(timerSeconds)}</span>
+            <button class="button secondary" data-add-timer="${timerKey}" data-timer-seconds="${timerSeconds}" data-timer-label="${escapeHtml(`${stepTitle}：${stepText}`)}" ${timerExists ? "disabled" : ""}>
+              ${timerExists ? "计时器已添加" : "＋ 添加计时器"}
+            </button>
+          </div>
+        ` : ""}
+        ${renderActiveTimers()}
       </main>
       <footer class="cook-controls">
         <button class="button secondary" data-cook-prev ${state.cookStep === 0 ? "disabled" : ""}>← 上一步</button>
-        <button class="button primary" data-cook-next>${isLast ? "完成这道菜 ✓" : "下一步 →"}</button>
+        <button class="button primary" data-cook-next>${isLast ? (togetherMode ? "完成全部菜 ✓" : "完成这道菜 ✓") : "下一步 →"}</button>
       </footer>
     </div>`;
+}
+
+function getStepTimerSeconds(step) {
+  if (Number(step.timer) > 0) return Number(step.timer);
+  const text = String(step.text || "");
+  const hour = text.match(/(\d+(?:\.\d+)?)\s*(?:小时|钟头)/);
+  const minute = text.match(/(\d+(?:\.\d+)?)\s*分钟/);
+  const second = text.match(/(\d+(?:\.\d+)?)\s*秒/);
+  return Math.round(
+    (hour ? Number(hour[1]) * 3600 : 0) +
+    (minute ? Number(minute[1]) * 60 : 0) +
+    (second ? Number(second[1]) : 0)
+  );
+}
+
+function renderActiveTimers() {
+  if (!state.activeTimers.length) return "";
+  return `
+    <section class="active-timers">
+      <div class="active-timers-head"><strong>进行中的计时器</strong><span>${state.activeTimers.length} 个</span></div>
+      ${state.activeTimers.map(timer => `
+        <article class="active-timer ${timer.remaining <= 0 ? "finished" : ""}">
+          <div><strong>${escapeHtml(timer.label)}</strong><span data-timer-display="${timer.id}">${formatTime(Math.max(0, timer.remaining))}</span></div>
+          <div class="timer-actions">
+            <button class="button secondary small" data-timer-toggle="${timer.id}" ${timer.remaining <= 0 ? "disabled" : ""}>${timer.running ? "暂停" : "继续"}</button>
+            <button class="button secondary small" data-timer-reset="${timer.id}">重置</button>
+            <button class="button secondary small" data-timer-remove="${timer.id}">完成</button>
+          </div>
+        </article>
+      `).join("")}
+    </section>
+  `;
 }
 
 function formatTime(seconds) {
@@ -372,14 +440,21 @@ function formatTime(seconds) {
 }
 
 function finishCooking() {
-  state.activeRecipe.cooked += 1;
+  if (state.cookMode === "together") {
+    const selectedIds = new Set(state.togetherRecipeIds.map(Number));
+    state.recipes.forEach(recipe => {
+      if (selectedIds.has(recipe.id)) recipe.cooked += 1;
+    });
+    toast("已记录：一起完成这桌菜");
+  } else {
+    state.activeRecipe.cooked += 1;
+    toast(`已记录：完成 ${state.activeRecipe.title}`);
+  }
   document.querySelector("#weekCount").textContent = Number(document.querySelector("#weekCount").textContent) + 1;
-  clearInterval(state.timerId);
-  state.timerId = null;
+  clearCookingTimers();
   cookDialog.close();
   save();
   render();
-  toast(`已记录：完成 ${state.activeRecipe.title}`);
 }
 
 async function openOrganizer(id) {
@@ -834,6 +909,10 @@ document.addEventListener("click", event => {
     generateTogetherPlan();
     return;
   }
+  if (event.target.closest("[data-start-together]")) {
+    openTogetherCook();
+    return;
+  }
   const nav = event.target.closest("[data-nav]");
   if (nav) {
     event.preventDefault();
@@ -878,7 +957,10 @@ document.addEventListener("click", event => {
   if (event.target.closest("[data-close-detail]")) recipeDialog.close();
   const start = event.target.closest("[data-start-cook]");
   if (start) openCook(start.dataset.startCook);
-  if (event.target.closest("[data-close-cook]")) { clearInterval(state.timerId); state.timerId = null; cookDialog.close(); }
+  if (event.target.closest("[data-close-cook]")) {
+    clearCookingTimers();
+    cookDialog.close();
+  }
   const organize = event.target.closest("[data-organize]");
   if (organize) openOrganizer(organize.dataset.organize);
   const del = event.target.closest("[data-delete-inbox]");
@@ -887,15 +969,30 @@ document.addEventListener("click", event => {
     state.inbox = state.inbox.filter(entry => entry.id !== id);
     render();
   }
-  if (event.target.closest("[data-cook-prev]") && state.cookStep > 0) { state.cookStep--; resetTimer(); renderCook(); }
+  if (event.target.closest("[data-cook-prev]") && state.cookStep > 0) {
+    state.cookStep--;
+    renderCook();
+  }
   if (event.target.closest("[data-cook-next]")) {
-    if (state.cookStep < state.activeRecipe.steps.length - 1) { state.cookStep++; resetTimer(); renderCook(); }
+    const stepCount = state.cookMode === "together"
+      ? state.togetherPlan.timeline.length
+      : state.activeRecipe.steps.length;
+    if (state.cookStep < stepCount - 1) {
+      state.cookStep++;
+      renderCook();
+    }
     else finishCooking();
   }
-  const timer = event.target.closest("[data-timer]");
-  if (timer) toggleTimer(Number(timer.dataset.timer));
-  const reset = event.target.closest("[data-reset-timer]");
-  if (reset) { resetTimer(Number(reset.dataset.resetTimer)); renderCook(); }
+  const addTimer = event.target.closest("[data-add-timer]");
+  if (addTimer) {
+    addCookingTimer(addTimer.dataset.addTimer, addTimer.dataset.timerLabel, Number(addTimer.dataset.timerSeconds));
+  }
+  const toggleTimer = event.target.closest("[data-timer-toggle]");
+  if (toggleTimer) toggleCookingTimer(toggleTimer.dataset.timerToggle);
+  const resetTimer = event.target.closest("[data-timer-reset]");
+  if (resetTimer) resetCookingTimer(resetTimer.dataset.timerReset);
+  const removeTimer = event.target.closest("[data-timer-remove]");
+  if (removeTimer) removeCookingTimer(removeTimer.dataset.timerRemove);
 });
 
 document.addEventListener("keydown", event => {
@@ -906,32 +1003,87 @@ document.addEventListener("keydown", event => {
   }
 });
 
-function resetTimer(value = 0) {
-  clearInterval(state.timerId);
-  state.timerId = null;
-  state.seconds = value;
+function addCookingTimer(key, label, seconds) {
+  if (!seconds || state.activeTimers.some(timer => timer.key === key)) return;
+  state.activeTimers.push({
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    key,
+    label,
+    total: seconds,
+    remaining: seconds,
+    running: true,
+    endsAt: Date.now() + seconds * 1000
+  });
+  ensureTimerTicker();
+  renderCook();
 }
 
-function toggleTimer(defaultSeconds) {
-  if (state.timerId) {
-    clearInterval(state.timerId);
-    state.timerId = null;
-    renderCook();
-    return;
+function toggleCookingTimer(id) {
+  const timer = state.activeTimers.find(item => item.id === id);
+  if (!timer || timer.remaining <= 0) return;
+  if (timer.running) {
+    timer.remaining = Math.max(0, Math.ceil((timer.endsAt - Date.now()) / 1000));
+    timer.running = false;
+    timer.endsAt = null;
+  } else {
+    timer.running = true;
+    timer.endsAt = Date.now() + timer.remaining * 1000;
   }
-  if (!state.seconds) state.seconds = defaultSeconds;
-  state.timerId = setInterval(() => {
-    state.seconds -= 1;
-    const text = document.querySelector("#timerText");
-    if (text) text.textContent = formatTime(Math.max(0, state.seconds));
-    if (state.seconds <= 0) {
-      clearInterval(state.timerId);
-      state.timerId = null;
-      toast("计时结束，可以进行下一步了");
+  ensureTimerTicker();
+  renderCook();
+}
+
+function resetCookingTimer(id) {
+  const timer = state.activeTimers.find(item => item.id === id);
+  if (!timer) return;
+  timer.remaining = timer.total;
+  timer.running = false;
+  timer.endsAt = null;
+  renderCook();
+}
+
+function removeCookingTimer(id) {
+  state.activeTimers = state.activeTimers.filter(timer => timer.id !== id);
+  stopTimerTickerIfIdle();
+  renderCook();
+}
+
+function ensureTimerTicker() {
+  if (state.timerTickerId || !state.activeTimers.some(timer => timer.running && timer.remaining > 0)) return;
+  state.timerTickerId = setInterval(() => {
+    let completed = false;
+    const now = Date.now();
+    state.activeTimers.forEach(timer => {
+      if (!timer.running || timer.remaining <= 0) return;
+      const previousRemaining = timer.remaining;
+      timer.remaining = Math.max(0, Math.ceil((timer.endsAt - now) / 1000));
+      if (previousRemaining > 0 && timer.remaining <= 0) {
+        timer.remaining = 0;
+        timer.running = false;
+        timer.endsAt = null;
+        completed = true;
+      }
+      const display = document.querySelector(`[data-timer-display="${timer.id}"]`);
+      if (display) display.textContent = formatTime(timer.remaining);
+    });
+    if (completed) {
+      toast("计时结束，请检查对应菜品");
       renderCook();
     }
+    stopTimerTickerIfIdle();
   }, 1000);
-  renderCook();
+}
+
+function stopTimerTickerIfIdle() {
+  if (state.activeTimers.some(timer => timer.running && timer.remaining > 0)) return;
+  clearInterval(state.timerTickerId);
+  state.timerTickerId = null;
+}
+
+function clearCookingTimers() {
+  clearInterval(state.timerTickerId);
+  state.timerTickerId = null;
+  state.activeTimers = [];
 }
 
 function setImportStatus(message, type = "") {
