@@ -112,6 +112,7 @@ function save() {
   localStorage.setItem("zaobian-together-recipes", JSON.stringify(state.togetherRecipeIds));
   localStorage.setItem("zaobian-together-plan", JSON.stringify(state.togetherPlan));
   document.querySelector("#inboxCount").textContent = state.inbox.length;
+  document.querySelector("#togetherCount").textContent = state.togetherRecipeIds.length;
 }
 
 function toast(message) {
@@ -161,6 +162,7 @@ function renderLibrary() {
 
 function recipeCard(recipe) {
   const calories = Number(recipe.calories);
+  const isTogether = state.togetherRecipeIds.includes(recipe.id);
   return `
     <article class="recipe-card" data-recipe="${recipe.id}" tabindex="0">
       <img class="recipe-image" src="${recipe.image}" alt="${recipe.title}">
@@ -170,6 +172,9 @@ function recipeCard(recipe) {
         <div class="recipe-meta"><span class="source-dot"></span><span>${recipe.time} 分钟</span><span>·</span><span>做过 ${recipe.cooked} 次</span></div>
         <h3>${recipe.title}</h3>
         <div class="tag-row">${recipe.tags.map(tag => `<span class="tag">${tag}</span>`).join("")}</div>
+        <button class="button small together-add ${isTogether ? "added" : ""}" data-toggle-together="${recipe.id}" type="button" aria-pressed="${isTogether}">
+          ${isTogether ? "✓ 已加入一起做" : "＋ 加入一起做"}
+        </button>
       </div>
     </article>
   `;
@@ -208,37 +213,56 @@ function escapeHtml(value) {
 }
 
 function renderTogether() {
-  const selected = new Set(state.togetherRecipeIds.map(Number));
+  const selectedRecipes = state.togetherRecipeIds
+    .map(id => state.recipes.find(recipe => recipe.id === Number(id)))
+    .filter(Boolean);
   const plan = isTogetherPlan(state.togetherPlan) ? state.togetherPlan : null;
   viewRoot.innerHTML = `
     <div class="view-head">
       <div>
         <span class="eyebrow">多菜协同</span>
         <h1>一起做，少忙一阵</h1>
-        <p>选择 2–6 道菜，AI 会合并备料，并利用等待时间穿插安排步骤。</p>
+        <p>从菜谱库加入 2–6 道菜，AI 会合并备料，并利用等待时间穿插安排步骤。</p>
       </div>
-      <button class="button primary" data-generate-together ${selected.size < 2 || state.togetherLoading ? "disabled" : ""}>
-        ${state.togetherLoading ? "正在规划…" : `生成烹饪计划（${selected.size}）`}
-      </button>
-    </div>
-    <div class="together-picker">
-      ${state.recipes.map(recipe => `
-        <button class="together-card ${selected.has(recipe.id) ? "selected" : ""}" data-toggle-together="${recipe.id}" type="button" aria-pressed="${selected.has(recipe.id)}">
-          <img src="${recipe.image}" alt="">
-          <span><strong>${escapeHtml(recipe.title)}</strong><small>${recipe.time} 分钟 · ${recipe.servings} 人份</small></span>
-          <b>${selected.has(recipe.id) ? "✓" : "＋"}</b>
+      <div class="head-actions">
+        <button class="button secondary" data-nav="library">去菜谱库添加</button>
+        <button class="button primary" data-generate-together ${selectedRecipes.length < 2 || state.togetherLoading ? "disabled" : ""}>
+          ${state.togetherLoading ? "正在规划…" : `生成烹饪计划（${selectedRecipes.length}）`}
         </button>
-      `).join("")}
+      </div>
     </div>
+    ${selectedRecipes.length ? `
+      <section class="together-selection">
+        <div class="selection-head">
+          <div><span class="eyebrow">本次菜单</span><strong>已从菜谱库加入 ${selectedRecipes.length} 道菜</strong></div>
+          <span>返回菜谱库可继续添加或移除</span>
+        </div>
+        <div class="together-picker selected-recipes">
+          ${selectedRecipes.map(recipe => `
+            <article class="together-card">
+              <img src="${recipe.image}" alt="">
+              <span><strong>${escapeHtml(recipe.title)}</strong><small>${recipe.time} 分钟 · ${recipe.servings} 人份</small></span>
+              <b>✓</b>
+            </article>
+          `).join("")}
+        </div>
+      </section>
+    ` : `
+      <div class="empty together-empty">
+        <strong>还没有加入准备一起做的菜</strong>
+        <span>请前往菜谱库，在菜谱卡片或详情中点击“加入一起做”。</span>
+        <button class="button primary" data-nav="library">前往菜谱库</button>
+      </div>
+    `}
     <div id="togetherStatus" class="recognize-status ${state.togetherLoading ? "show loading" : ""}" role="status">
       ${state.togetherLoading ? "AI 正在合并备料并安排并行步骤，通常需要几秒钟…" : ""}
     </div>
-    ${plan ? renderTogetherPlan(plan) : `
+    ${plan ? renderTogetherPlan(plan) : selectedRecipes.length ? `
       <div class="empty together-empty">
-        <strong>先选几道准备一起做的菜</strong>
-        <span>建议同时选择一道耗时较长的炖蒸菜和一两道快手菜。</span>
+        <strong>${selectedRecipes.length < 2 ? "还需要再加入至少一道菜" : "菜单已准备好"}</strong>
+        <span>${selectedRecipes.length < 2 ? "一起做至少需要两道菜。" : "点击上方按钮，让 AI 合并备料并安排烹饪顺序。"}</span>
       </div>
-    `}
+    ` : ""}
   `;
 }
 
@@ -306,6 +330,7 @@ function render() {
 function openRecipe(id) {
   const recipe = state.recipes.find(item => item.id === Number(id));
   if (!recipe) return;
+  const isTogether = state.togetherRecipeIds.includes(recipe.id);
   state.activeRecipe = recipe;
   document.querySelector("#recipeDetail").innerHTML = `
     <div class="detail-hero">
@@ -331,6 +356,9 @@ function openRecipe(id) {
       <div>
         <button class="button secondary" data-edit-recipe="${recipe.id}">编辑菜谱</button>
         <button class="button secondary" data-favorite="${recipe.id}">${recipe.favorite ? "★ 已加入常做" : "☆ 加入常做"}</button>
+        <button class="button secondary ${isTogether ? "together-added" : ""}" data-toggle-together="${recipe.id}" aria-pressed="${isTogether}">
+          ${isTogether ? "✓ 已加入一起做" : "＋ 加入一起做"}
+        </button>
       </div>
       <button class="button primary" data-start-cook="${recipe.id}">开始做菜 →</button>
     </div>`;
@@ -881,6 +909,22 @@ function buildLocalTogetherPlan(recipes) {
   };
 }
 
+function toggleTogetherRecipe(id) {
+  if (state.togetherRecipeIds.includes(id)) {
+    state.togetherRecipeIds = state.togetherRecipeIds.filter(recipeId => recipeId !== id);
+    toast("已从一起做移除");
+  } else if (state.togetherRecipeIds.length < 6) {
+    state.togetherRecipeIds.push(id);
+    toast("已加入一起做");
+  } else {
+    toast("一次最多加入 6 道菜");
+    return false;
+  }
+  state.togetherPlan = null;
+  save();
+  return true;
+}
+
 document.addEventListener("click", event => {
   if (event.target.closest("[data-export-backup]")) {
     exportBackup();
@@ -893,16 +937,13 @@ document.addEventListener("click", event => {
   const togetherToggle = event.target.closest("[data-toggle-together]");
   if (togetherToggle) {
     const id = Number(togetherToggle.dataset.toggleTogether);
-    if (state.togetherRecipeIds.includes(id)) {
-      state.togetherRecipeIds = state.togetherRecipeIds.filter(recipeId => recipeId !== id);
-    } else if (state.togetherRecipeIds.length < 6) {
-      state.togetherRecipeIds.push(id);
-    } else {
-      toast("一次最多选择 6 道菜");
-      return;
+    if (toggleTogetherRecipe(id)) {
+      if (recipeDialog.open) {
+        openRecipe(id);
+      } else {
+        render();
+      }
     }
-    state.togetherPlan = null;
-    render();
     return;
   }
   if (event.target.closest("[data-generate-together]")) {
@@ -996,6 +1037,7 @@ document.addEventListener("click", event => {
 });
 
 document.addEventListener("keydown", event => {
+  if (event.target.closest?.("button")) return;
   const card = event.target.closest?.("[data-recipe]");
   if (card && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
