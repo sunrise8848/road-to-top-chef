@@ -135,6 +135,10 @@ function normalizeTogetherRecipes(value) {
 }
 
 async function createTogetherPlan(recipes, env, apiKey) {
+  return requestTogetherPlan(recipes, env, apiKey, 0);
+}
+
+async function requestTogetherPlan(recipes, env, apiKey, attempt) {
   const response = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: {
@@ -145,7 +149,15 @@ async function createTogetherPlan(recipes, env, apiKey) {
       model: env.DEEPSEEK_MODEL || "deepseek-v4-flash",
       messages: [
         { role: "system", content: buildTogetherPrompt() },
-        { role: "user", content: JSON.stringify({ recipes }) }
+        {
+          role: "user",
+          content: JSON.stringify({
+            recipes,
+            correction: attempt
+              ? "上一次结果未能让所选菜品接近同时出锅，或包含了未选择的菜名。请重新倒排，只使用本次 recipes 中的菜名。"
+              : undefined
+          })
+        }
       ],
       thinking: { type: "disabled" },
       response_format: { type: "json_object" },
@@ -168,7 +180,13 @@ async function createTogetherPlan(recipes, env, apiKey) {
   const outputText = result.choices?.[0]?.message?.content;
   if (!outputText) throw createHttpError("DeepSeek 没有返回烹饪计划", 502);
   try {
-    return normalizeTogetherPlan(JSON.parse(outputText), recipes);
+    const plan = normalizeTogetherPlan(JSON.parse(outputText), recipes);
+    const issue = getTogetherPlanIssue(plan, recipes);
+    if (issue && attempt < 1) {
+      return requestTogetherPlan(recipes, env, apiKey, attempt + 1);
+    }
+    if (issue) throw createHttpError(issue, 502);
+    return plan;
   } catch (error) {
     if (error.status) throw error;
     throw createHttpError("DeepSeek 返回的烹饪计划格式无效，请重试", 502);
@@ -234,6 +252,29 @@ function normalizeTogetherPlan(value, recipes) {
       ? value.tips.map(tip => String(tip).trim()).filter(Boolean).slice(0, 12)
       : []
   };
+}
+
+function getTogetherPlanIssue(plan, recipes) {
+  const recipeNames = new Set(recipes.map(recipe => recipe.title));
+  const unknownRecipes = plan.timeline
+    .map(item => item.recipe)
+    .filter(name => name !== "通用备料" && name !== "通用" && !recipeNames.has(name));
+  if (unknownRecipes.length) {
+    return "AI 规划包含未选择的菜品，请重新生成";
+  }
+
+  const finishTimes = recipes.map(recipe => {
+    const recipeItems = plan.timeline.filter(item => item.recipe === recipe.title);
+    if (!recipeItems.length) return null;
+    return Math.max(...recipeItems.map(item => item.startMinute + item.duration));
+  });
+  if (finishTimes.some(time => time === null)) {
+    return "AI 规划遗漏了部分菜品，请重新生成";
+  }
+  if (Math.max(...finishTimes) - Math.min(...finishTimes) > 5) {
+    return "AI 未能让各菜在 5 分钟内接近同时出锅，请重新生成";
+  }
+  return "";
 }
 
 function buildMergedPrep(recipes, modelPrep) {
