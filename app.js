@@ -391,7 +391,11 @@ function openRecipe(id) {
       </div>
       <div class="detail-columns">
         <section><h3 class="section-title">食材清单</h3><ul class="ingredient-list">${recipe.ingredients.map(([name, amount]) => `<li><span>${name}</span><strong>${amount}</strong></li>`).join("")}</ul></section>
-        <section><h3 class="section-title">制作步骤</h3><ol class="steps">${recipe.steps.map(step => `<li>${step.text}</li>`).join("")}</ol>
+        <section><h3 class="section-title">制作步骤</h3><ol class="steps">${recipe.steps.map(step => `
+          <li>
+            ${escapeHtml(step.text)}
+            ${step.items ? `<small class="step-ingredients">本步用料：${escapeHtml(step.items)}</small>` : ""}
+          </li>`).join("")}</ol>
           <div class="personal-note"><span class="eyebrow">我的调整</span><p>${recipe.note}</p></div>
         </section>
       </div>
@@ -747,7 +751,11 @@ function openRecipeEditor(id) {
     .map(([name, amount]) => `${name} | ${amount}`)
     .join("\n");
   organizeForm.elements.steps.value = recipe.steps
-    .map(step => `${step.text}${Number(step.timer) > 0 ? ` | ${step.timer}` : ""}`)
+    .map(step => [
+      step.text,
+      step.items || "",
+      Number(step.timer) > 0 ? step.timer : ""
+    ].filter((part, index, parts) => index === 0 || part || parts.slice(index + 1).some(Boolean)).join(" | "))
     .join("\n");
   organizeForm.elements.note.value = recipe.note === "暂无个人调整。" ? "" : recipe.note;
   recipeDialog.close();
@@ -802,7 +810,11 @@ function fillRecipeDraft(draft) {
     .map(item => `${item.name} | ${item.amount || "适量"}`)
     .join("\n");
   organizeForm.elements.steps.value = (draft.steps || [])
-    .map(step => `${step.text}${Number(step.timer) > 0 ? ` | ${step.timer}` : ""}`)
+    .map(step => [
+      step.text,
+      step.items || "",
+      Number(step.timer) > 0 ? step.timer : ""
+    ].filter((part, index, parts) => index === 0 || part || parts.slice(index + 1).some(Boolean)).join(" | "))
     .join("\n");
   organizeForm.elements.note.value = draft.note || "";
 }
@@ -882,11 +894,16 @@ function parseSteps(value) {
     .map(line => line.trim())
     .filter(Boolean)
     .map(line => {
-      const [text, timerText = ""] = line.split(/\s*\|\s*(?=\d+\s*$)/);
+      const parts = line.split(/\s*\|\s*/);
+      const text = parts.shift() || "";
+      const lastPart = parts.at(-1) || "";
+      const hasTimer = /^\d+$/.test(lastPart);
+      const timerText = hasTimer ? parts.pop() : "";
+      const items = parts.join(" | ").trim();
       const timer = Math.max(0, Number(timerText) || 0);
       return {
         text: text.trim(),
-        items: "",
+        items,
         ...(timer > 0 ? { timer } : {})
       };
     });
@@ -918,6 +935,7 @@ async function generateTogetherPlan() {
         ingredients: recipe.ingredients.map(([name, amount]) => ({ name, amount })),
         steps: recipe.steps.map(step => ({
           text: step.text,
+          items: step.items || "",
           timer: Number(step.timer) || 0
         })),
         note: recipe.note

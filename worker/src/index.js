@@ -127,6 +127,7 @@ function normalizeTogetherRecipes(value) {
     steps: Array.isArray(recipe?.steps)
       ? recipe.steps.slice(0, 30).map(step => ({
         text: String(step?.text || "").trim().slice(0, 500),
+        items: String(step?.items || "").trim().slice(0, 500),
         timer: clampInteger(step?.timer, 0, 86400, 0)
       })).filter(step => step.text)
       : [],
@@ -384,11 +385,16 @@ function buildDeepSeekPrompt() {
   return [
     "你是中文家常菜谱整理助手。请只输出 JSON，不要输出 Markdown 或解释。",
     "从用户提供的教程文字或字幕中提取可执行的菜谱草稿。",
-    "没有明确用量时填写“适量”；没有明确时间时给出保守估计。",
+    "原文中出现的所有食材、调味料及其具体用量必须完整保留，包括克数、毫升、个数、勺、茶匙、碗、片、瓣、比例和分次用量；不得省略、四舍五入、改写成“适量”或擅自换算单位。",
+    "ingredients 必须列出原文提到的完整用量。只有原文确实没有说明某项食材用量时，才填写“适量”。",
+    "每个 steps 项必须包含 text 和 items。text 要写成可以直接照做的完整步骤，并在使用配料的位置再次写明该步骤实际加入的具体用量，例如“加入生抽 2 勺、老抽 1 勺翻炒”。",
+    "steps.items 是本步骤使用的配料及用量摘要，格式为“生抽 2 勺、老抽 1 勺”；纯切配、等待或不使用新配料的步骤可为空字符串。",
+    "如果同一种食材分多次加入，应按照原文保留每次加入的用量；原文只给总量但未说明分配时，不得编造每一步的拆分量，应在相关步骤写明“按原文总量酌情分次加入”。",
+    "没有明确时间时给出保守估计；步骤中原文明确的时间和火候也必须保留。",
     "根据食材及用量估算整道菜的总热量，再除以 servings，返回每份热量 calories，单位为千卡；这只是近似营养估算。",
     "若内容不足以可靠提取至少两种食材和两个步骤，needsMoreText 必须为 true。",
     "不要虚构教程中完全没有依据的关键食材或烹饪方法。",
-    'JSON 格式示例：{"title":"番茄炒蛋","time":15,"servings":2,"calories":230,"difficulty":"简单","tags":["快手菜"],"ingredients":[{"name":"番茄","amount":"2个"}],"steps":[{"text":"番茄切块。"}],"note":"注意火候。","needsMoreText":false}'
+    'JSON 格式示例：{"title":"番茄炒蛋","time":15,"servings":2,"calories":230,"difficulty":"简单","tags":["快手菜"],"ingredients":[{"name":"番茄","amount":"2个"},{"name":"鸡蛋","amount":"3个"},{"name":"盐","amount":"2克"}],"steps":[{"text":"将番茄 2 个切块，鸡蛋 3 个加入盐 1 克打散。","items":"番茄 2个、鸡蛋 3个、盐 1克"},{"text":"锅中加入剩余盐 1 克和番茄块翻炒。","items":"盐 1克、番茄 2个"}],"note":"注意火候。","needsMoreText":false}'
   ].join("\n");
 }
 
@@ -407,7 +413,13 @@ function normalizeRecipeDraft(value) {
     : [];
   const steps = Array.isArray(value?.steps)
     ? value.steps
-      .map(item => ({ text: String(item?.text || "").trim() }))
+      .map(item => ({
+        text: String(item?.text || "").trim(),
+        items: String(item?.items || "").trim().slice(0, 500),
+        ...(clampInteger(item?.timer, 0, 86400, 0) > 0
+          ? { timer: clampInteger(item.timer, 0, 86400, 0) }
+          : {})
+      }))
       .filter(item => item.text)
       .slice(0, 30)
     : [];

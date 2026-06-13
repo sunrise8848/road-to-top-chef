@@ -204,6 +204,7 @@ dialog::backdrop { background: rgba(16, 25, 20, .55); backdrop-filter: blur(3px)
 .steps { margin: 0; padding: 0; list-style: none; counter-reset: steps; }
 .steps li { position: relative; min-height: 40px; padding: 0 0 20px 45px; line-height: 1.65; font-size: 13px; }
 .steps li::before { counter-increment: steps; content: counter(steps); position: absolute; left: 0; top: 0; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; color: white; background: var(--green); font-weight: 800; }
+.step-ingredients { display: block; margin-top: 7px; color: var(--muted); line-height: 1.55; }
 .personal-note { margin-top: 24px; padding: 16px; border-left: 3px solid var(--yellow); background: #fffaf0; }
 .personal-note p { margin-bottom: 0; color: #665b43; line-height: 1.6; font-size: 13px; }
 .detail-footer { position: sticky; bottom: 0; padding: 15px 30px; display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); background: rgba(255,255,255,.96); }
